@@ -703,8 +703,9 @@ function phanTichThuocTinhCongPhap(c, apDungGiamTru = true) {
   }
   if (Number(cs.khangTamMa) > 0) r.tiLeDotPha += Number(cs.khangTamMa);
   if (Number(cs.liemTuc) > 0) {
-    r.phongThuPct += Number(cs.liemTuc);
-    r.neTranhPct += Number(cs.liemTuc) * 0.5;
+    const ltFrac = Number(cs.liemTuc) > 1 ? Number(cs.liemTuc) / 100 : Number(cs.liemTuc);
+    r.phongThuPct += ltFrac;
+    r.neTranhPct += ltFrac * 0.5;
   }
 
   // Hỗ trợ cả chiSoPhang dạng số lẫn dạng object { thanThuc, thanPhap, khiVan, daoTam, canCot, ngoTinh }
@@ -1047,6 +1048,32 @@ function layPhamChatVatPham(itemKeyOrPcKey) {
   const s = String(itemKeyOrPcKey || '');
   const pcKey = s.includes('@') ? tachItemKey(s).pcKey : s;
   return PHAM_CHAT_CHAT_LUONG.find(p => p.key === pcKey) || PHAM_CHAT_CHAT_LUONG[1];
+}
+
+function layCanhGioiVatPham(vp) {
+  if (!vp) return 0;
+  if (vp.loai === 'phap_bao') return layCanhGioiPhapBao(vp);
+  if (typeof vp.canhGioi === 'number') return vp.canhGioi;
+  const bac = Math.max(0, Number(vp.bac ?? 0) || 0);
+  const gia = Number(vp.gia) || 0;
+  let tuGia = 0;
+  if (gia >= 400000) tuGia = 8;
+  else if (gia >= 180000) tuGia = 7;
+  else if (gia >= 80000) tuGia = 6;
+  else if (gia >= 35000) tuGia = 5;
+  else if (gia >= 12000) tuGia = 4;
+  else if (gia >= 1800) tuGia = 3;
+  else if (gia >= 450) tuGia = 2;
+  else if (gia >= 150) tuGia = 1;
+  return Math.max(bac > 1 ? bac : 0, tuGia);
+}
+
+function kepKhiHuyetVaLinhLuc() {
+  if (!state) return;
+  const hpMax = tinhHpMax();
+  const mpMax = tinhMpMax();
+  state.hp = Math.max(0, Math.min(hpMax, state.hp));
+  state.mp = Math.max(0, Math.min(mpMax, state.mp ?? mpMax));
 }
 
 function layRankVatPham(vp) {
@@ -2354,7 +2381,7 @@ function ghiNhanDungDan(vp) {
   state.duocKhang[vp.id] = { daDung: daDung + 1, tuCg };
 }
 
-function kiemTraDieuKienDungDan(vp, trongTran = false) {
+function kiemTraDieuKienDungDan(vp, trongTran = false, itemKey = null) {
   if (!vp || vp.loai !== 'dan') return { ok: true, lyDo: '' };
   const cgCur = Number(state?.canhGioi || 0);
   const vpCg = Number(vp.canhGioi ?? 0);
@@ -2369,6 +2396,17 @@ function kiemTraDieuKienDungDan(vp, trongTran = false) {
   const coDp = (Number(hu.bonusDotPha) || 0) > 0;
   if (cgCur > vpCg + 2 && !coTho && !coDp) {
     return { ok: false, lyDo: 'Đan lực quá yếu với tu vi hiện tại' };
+  }
+  if (!trongTran && coDp && (state?.dotPhaBuff || 0) > 0) {
+    const bGoc = Number(hu.bonusDotPha) > 1 ? Number(hu.bonusDotPha) / 100 : Number(hu.bonusDotPha);
+    const heSo = itemKey ? layPhamChatVatPham(itemKey).heSo || 1 : 1;
+    const b = Math.round(bGoc * heSo * 100) / 100;
+    if ((state.dotPhaBuff || 0) >= b) {
+      return {
+        ok: false,
+        lyDo: `Đang mang dược lực đột phá (+${Math.round(state.dotPhaBuff * 100)}%), hãy giữ đan trong túi tránh lãng phí`
+      };
+    }
   }
   if (!trongTran && ((Number(hu.tuVi) || 0) > 0 || (Number(hu.canCot) || 0) > 0 || coTho)) {
     const dk = thongTinDuocKhangDan(vp);
@@ -2405,6 +2443,7 @@ function dungVatPham(itemId) {
 
   if (vp.loai === 'phap_bao') {
     state.phapBao = state.phapBao === itemId ? null : itemId;
+    kepKhiHuyetVaLinhLuc();
     ghiNhatKy(
       state.phapBao ? `⚔️ Trang bị pháp bảo [${vp.ten}].` : `Thu hồi [${vp.ten}] vào túi trữ vật.`,
       'thuong'
@@ -2415,7 +2454,7 @@ function dungVatPham(itemId) {
   }
 
   if (vp.loai === 'dan' && vp.hieuUng) {
-    const checkDan = kiemTraDieuKienDungDan(vp, false);
+    const checkDan = kiemTraDieuKienDungDan(vp, false, itemId);
     if (!checkDan.ok) {
       ghiNhatKy(`⚠️ Không thể phục dụng [${vp.ten}]: ${checkDan.lyDo}!`, 'canh_bao');
       veGiaoDien();
@@ -2645,6 +2684,7 @@ function trangBiCongPhapHoacBiThuat(cid) {
     state.congPhap = cid;
     ghiNhatKy(`🔄 Chuyển sang vận chuyển chủ công pháp 【${cp.ten}】!`, 'tot');
   }
+  kepKhiHuyetVaLinhLuc();
   luuGame();
   veGiaoDien();
 }
@@ -2946,7 +2986,7 @@ function sinhDonCuaTong() {
   if (!tm) return null;
   const cg = state.canhGioi || 0;
   const pool = (window.PN_DATA.vatPham || []).filter(
-    v => ['dan', 'phu_luc', 'linh_thao', 'yeu_dan'].includes(v.loai) && (v.canhGioi ?? v.bac ?? 0) <= cg + 1 && (v.gia || 0) > 0
+    v => ['dan', 'phu_luc', 'linh_thao', 'yeu_dan'].includes(v.loai) && layCanhGioiVatPham(v) <= cg + 1 && (v.gia || 0) > 0
   );
   const vp = pickRandom(pool.length > 0 ? pool : window.PN_DATA.vatPham);
   if (!vp) return null;
@@ -3806,15 +3846,17 @@ function khamPhaDiaDiemCon(ddId) {
 
 function chonVatPhamBiCanh(bc, loaiUuTien = null) {
   const maxCg = Math.min(9, Math.max(state.canhGioi, bc.canhGioiMax ?? state.canhGioi));
+  const giaCap = [200, 500, 3000, 15000, 50000, 140000, 350000, 750000, 1500000, Infinity][maxCg] ?? Infinity;
   const daNhat = (state.biCanhHienTai && state.biCanhHienTai.thuHoach) || [];
   if (!loaiUuTien && Array.isArray(bc.phanThuong) && bc.phanThuong.length > 0 && Math.random() < 0.45) {
     const chon = pickRandom(bc.phanThuong);
     const vp = layVatPhamDef(chon);
-    if (vp) return vp;
+    if (vp && layCanhGioiVatPham(vp) <= maxCg && (vp.gia || 0) <= giaCap) return vp;
   }
   const pool = (window.PN_DATA.vatPham || []).filter(v => {
     if (v.loai === 'tru_vat') return false;
-    if ((v.canhGioi ?? 0) > maxCg) return false;
+    if (layCanhGioiVatPham(v) > maxCg) return false;
+    if ((v.gia || 0) > giaCap) return false;
     if (loaiUuTien && v.loai !== loaiUuTien) return false;
     if (v.loai === 'linh_thao' && maxCg <= 1 && (v.gia || 0) > 400) return false;
     if (v.loai === 'linh_thao' && maxCg <= 2 && (v.gia || 0) > 5000) return false;
@@ -5303,7 +5345,7 @@ function thuHoachDoNpc(npc, maxNpcCg, choBiTich = true, tiLePhapBao = 0.45) {
     if (danDrop && themVat(danDrop.id, 1)) ds.push(`[${danDrop.ten}]`);
   }
   if (Math.random() < 0.5) {
-    const vlPool = window.PN_DATA.vatPham.filter(v => ['linh_thao', 'yeu_dan', 'linh_vat'].includes(v.loai) && (v.canhGioi ?? v.bac ?? 0) <= Math.max(1, maxNpcCg));
+    const vlPool = window.PN_DATA.vatPham.filter(v => ['linh_thao', 'yeu_dan', 'linh_vat'].includes(v.loai) && layCanhGioiVatPham(v) <= Math.max(1, maxNpcCg));
     const vlDrop = pickRandom(vlPool);
     if (vlDrop && themVat(vlDrop.id, 1)) ds.push(`vật liệu [${vlDrop.ten}]`);
   }
@@ -5530,7 +5572,7 @@ function kiemTraKetThucTran() {
     // Quái Yêu Thú rơi vật liệu ngẫu nhiên (Yêu đan / Linh thảo / Linh vật) phù hợp cảnh giới
     const matPool = window.PN_DATA.vatPham.filter(v => {
       if (!['yeu_dan', 'linh_thao', 'linh_vat'].includes(v.loai)) return false;
-      const cap = v.canhGioi ?? v.bac ?? 0;
+      const cap = layCanhGioiVatPham(v);
       if (v.loai === 'linh_thao' && cgDich <= 1 && (v.gia || 0) > 250) return false;
       return cap <= Math.max(1, cgDich);
     });
@@ -5924,6 +5966,7 @@ function veGiaoDien() {
     veManHinhKhoiTaoBlank();
     return;
   }
+  kepKhiHuyetVaLinhLuc();
 
   const lcDef = layLinhCanDef();
   const tcDef = layTheChatDef();
@@ -5992,9 +6035,22 @@ function veGiaoDien() {
   veCotPhai();
 }
 
+let lastInteractionKey = '';
+
 function veCotGiua() {
   const elInteraction = document.getElementById('main-interaction');
   const elLog = document.getElementById('main-log');
+  const interactionKey = state.ketThuc
+    ? 'ket_thuc'
+    : state.tranHienTai
+    ? `tran:${state.tranHienTai.ten}`
+    : state.hauChienNpc
+    ? `hau:${state.hauChienNpc.npcId}`
+    : state.biCanhHienTai
+    ? `bc:${state.biCanhHienTai.id}`
+    : state.suKienHienTai
+    ? `sk:${state.suKienHienTai.id || state.suKienHienTai.ten}`
+    : 'idle';
 
   if (state.ketThuc) {
     elInteraction.innerHTML = `
@@ -6140,7 +6196,7 @@ function veCotGiua() {
           <button class="btn" onclick="beQuan(1)">🧘 Bế quan 1 năm (+${tinhTocDoTuLuyenNam().toLocaleString()} TV)</button>
           <button class="btn" onclick="beQuan(5)">🧘 Bế quan 5 năm (+${(tinhTocDoTuLuyenNam() * 5).toLocaleString()} TV)</button>
           <button class="btn" onclick="beQuan(10)">🧘 Bế quan 10 năm (+${(tinhTocDoTuLuyenNam() * 10).toLocaleString()} TV)</button>
-          <button class="btn ${duTuVi ? 'btn-primary' : ''}" onclick="dotPha()">
+          <button class="btn ${duTuVi ? 'btn-primary' : ''}" onclick="dotPha()" ${duTuVi ? '' : 'disabled title="Cần tích lũy đủ Tu vi mới có thể xung kích!"'}>
             ⚡ ${laDaiCanh ? `Xung kích Đại Cảnh Giới (${tiLeDp}%)` : 'Đột phá Tiểu Cảnh Giới'}
           </button>
           ${
@@ -6176,6 +6232,11 @@ function veCotGiua() {
       </div>`
     )
     .join('');
+
+  if (interactionKey !== 'idle' && interactionKey !== lastInteractionKey && typeof elInteraction.scrollIntoView === 'function') {
+    elInteraction.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  lastInteractionKey = interactionKey;
 }
 
 // Kho hàng ngẫu nhiên theo vùng & năm (đảm bảo bày bán đa dạng Pháp bảo, Đan dược, Phù lục, Túi trữ vật, Thảo dược, Vật liệu, Công pháp)
@@ -6207,7 +6268,7 @@ function layKhoHangShop(vung, maxCg) {
     if (maxCg <= 2 && (v.gia || 0) > 5000) return false;
     return true;
   });
-  const vlList = allVp.filter(v => ['yeu_dan', 'linh_vat'].includes(v.loai) && hopCg(v.canhGioi ?? v.bac ?? 0));
+  const vlList = allVp.filter(v => ['yeu_dan', 'linh_vat'].includes(v.loai) && hopCg(layCanhGioiVatPham(v)));
 
   const pickedItems = [
     ...chonNgauNhienNhieu(pbList, vung.coPhuongThi ? 6 : 3),
@@ -6251,10 +6312,112 @@ function lamMoiShopVung() {
   veGiaoDien();
 }
 
+function renderShopBanListHtml(q) {
+  const dsBanFiltered = layDanhSachIdBanTrongTui(q);
+  for (const sid of [...shopSellSelected]) {
+    if (soLuongVat(sid) <= 0) shopSellSelected.delete(sid);
+  }
+  return dsBanFiltered.length === 0
+    ? '<div class="muted">Túi đồ không có vật phẩm phù hợp để bán.</div>'
+    : dsBanFiltered
+        .map(id => {
+          const vp = layVatPhamDef(id);
+          const sl = soLuongVat(id);
+          const pc = layPhamChatVatPham(id);
+          const rankTen = layRankVatPham(vp);
+          const dangDeo = state.phapBao === id;
+          const checked = shopSellSelected.has(id);
+          const gia1 = giaBanVatPham(vp, id);
+          const giaHet = gia1 * sl;
+          return `<div class="card-row">
+            <div style="display:flex;gap:8px;align-items:flex-start;min-width:0">
+              <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleChonBanDo('${id}')" style="width:auto;margin-top:3px;cursor:pointer" />
+              <div>
+                <b>${vp.ten}</b> <span class="badge">${rankTen}</span> <span class="badge ${pc.cls}">${pc.ten}</span> <span class="hl-gold">x${sl}</span> ${dangDeo ? '<span class="hl-green">[Đang đeo]</span>' : ''}
+                <div class="hl-realm">${moTaVatPhamNgan(vp, id)}</div>
+                <div class="muted">${vp.moTa}</div>
+              </div>
+            </div>
+            <div class="row-actions">
+              <button class="btn btn-sm" onclick="banVatPham('${id}', 1)">Bán 1 (+${gia1.toLocaleString()} LT)</button>
+              ${sl > 1 ? `<button class="btn btn-sm btn-primary" onclick="banVatPham('${id}', ${sl})">Bán hết (+${giaHet.toLocaleString()} LT)</button>` : ''}
+            </div>
+          </div>`;
+        })
+        .join('');
+}
+
+function renderShopMuaListHtml(vung, maxCg, q, tp) {
+  const kho = layKhoHangShop(vung, maxCg);
+  const cards = [];
+  const matchVpType = loai => {
+    if (tp === 'all') return true;
+    if (tp === 'vat_lieu') return loai === 'yeu_dan' || loai === 'linh_vat';
+    return loai === tp;
+  };
+
+  if (['all', 'dan', 'linh_thao', 'phap_bao', 'phu_luc', 'tru_vat', 'vat_lieu'].includes(tp)) {
+    for (const v of kho.items) {
+      if (!matchVpType(v.loai)) continue;
+      if (q && !v.ten.toLowerCase().includes(q) && !(v.moTa || '').toLowerCase().includes(q)) continue;
+      const sKey = v.shopKey || taoItemKey(v.id, v.pcKey || 'trung');
+      const pc = layPhamChatVatPham(sKey);
+      const rankTen = layRankVatPham(v);
+      const giaHien = v.giaShop || Math.max(1, Math.round((v.gia || 0) * pc.heSo));
+      cards.push(`<div class="card-row">
+        <div><b>${v.ten}</b> <span class="badge">${rankTen}</span> <span class="badge ${pc.cls}">${pc.ten}</span> <span class="hl-gold">(${giaHien.toLocaleString()} LT)</span><div class="hl-realm">${moTaVatPhamNgan(v, sKey)}</div><div class="muted">${v.moTa}</div></div>
+        <button class="btn btn-sm" onclick="muaVatPham('vat_pham', '${sKey}')">Mua</button>
+      </div>`);
+    }
+  }
+  if (tp === 'all' || tp === 'cong_phap') {
+    for (const c of kho.congPhap) {
+      if (state.congPhapDaHoc.includes(c.id)) continue;
+      if (q && !c.ten.toLowerCase().includes(q) && !(c.moTa || '').toLowerCase().includes(q)) continue;
+      cards.push(`<div class="card-row">
+        <div><b>[${c.loai === 'BI_THUAT' ? 'Bí thuật' : 'Công pháp'}] ${c.ten}</b> <span class="badge">${layCanhGioiDef(c.canhGioi).ten}</span> <span class="hl-gold">(${(c.gia || 0).toLocaleString()} LT)</span><div class="hl-realm">${moTaCongPhapNgan(c)}</div><div class="muted">${c.moTa}</div></div>
+        <button class="btn btn-sm btn-primary" onclick="muaVatPham('cong_phap', '${c.id}')">Lĩnh ngộ</button>
+      </div>`);
+    }
+  }
+  if (tp === 'all' || tp === 'dan_phuong') {
+    for (const d of kho.danPhuong) {
+      if (state.danPhuongDaHoc.includes(d.id)) continue;
+      if (q && !d.ten.toLowerCase().includes(q)) continue;
+      const giaDp = Math.max(150, Math.round(180 * Math.pow(2.4, d.canhGioi || 1)));
+      cards.push(`<div class="card-row">
+        <div><b>[Đan phương] ${d.ten}</b> <span class="hl-gold">(${giaDp.toLocaleString()} LT)</span><div class="muted">${d.moTa}</div></div>
+        <button class="btn btn-sm" onclick="muaVatPham('dan_phuong', '${d.id}')">Mua phương</button>
+      </div>`);
+    }
+  }
+  return cards.length > 0
+    ? cards.join('')
+    : '<div class="muted">Phiên chợ này chưa có mặt hàng phù hợp bộ lọc (thử bấm Đổi phiên hàng hoặc chọn Tất cả).</div>';
+}
+
+function capNhatDanhSachShop() {
+  if (!state) return;
+  const wrap = document.getElementById('shop-list-container');
+  if (!wrap) {
+    veCotPhai();
+    return;
+  }
+  const vung = layVungDef();
+  const maxCg = vung.coPhuongThi ? state.canhGioi + 1 : Math.min(2, state.canhGioi + 1);
+  const q = uiFilter.shopQuery.trim().toLowerCase();
+  const tp = uiFilter.shopType;
+  const shopTab = uiFilter.shopTab || 'mua';
+  wrap.innerHTML = shopTab === 'ban' ? renderShopBanListHtml(q) : renderShopMuaListHtml(vung, maxCg, q, tp);
+}
+
+let lastRenderedTabKey = '';
+
 function veCotPhai() {
   if (!state) return;
   const focusedId = document.activeElement && document.activeElement.id;
   const selStart = focusedId && focusedId.startsWith('filter-') ? document.activeElement.selectionStart : null;
+  const selEnd = focusedId && focusedId.startsWith('filter-') ? document.activeElement.selectionEnd : null;
 
   const tabDiaDiemBtn = document.getElementById('tab-btn-dia_diem');
   if (tabDiaDiemBtn) {
@@ -6265,6 +6428,10 @@ function veCotPhai() {
     btn.classList.toggle('active', btn.dataset.tab === activeTab);
   });
   const el = document.getElementById('tab-content');
+  const curTabKey = `${activeTab}:${diaDiemSubTab}:${uiFilter.shopTab}:${uiFilter.tmSubTab}`;
+  const giuScroll = el && lastRenderedTabKey === curTabKey;
+  const prevScrollTop = giuScroll ? el.scrollTop || 0 : 0;
+  lastRenderedTabKey = curTabKey;
 
   // TAB 1: ĐỘNG PHỦ CỐ ĐỊNH (3 -> 9 Ô), LINH KHÍ & LUYỆN ĐAN
   if (activeTab === 'dong_phu') {
@@ -6447,90 +6614,18 @@ function veCotPhai() {
 
         tabBody = `
           <div class="filter-bar">
-            <input id="filter-shop" type="text" placeholder="Tìm vật phẩm trong túi để bán..." value="${escapeHtml(uiFilter.shopQuery)}" oninput="uiFilter.shopQuery=this.value; veCotPhai()" />
+            <input id="filter-shop" type="text" placeholder="Tìm vật phẩm trong túi để bán..." value="${escapeHtml(uiFilter.shopQuery)}" oninput="uiFilter.shopQuery=this.value; capNhatDanhSachShop()" />
             <button class="btn btn-sm" onclick="chonTatCaBanDo()">${daChonHet ? '⬜ Bỏ chọn tất cả' : '☑️ Chọn tất cả'}</button>
             <button class="btn btn-sm" onclick="chonHaPhamBanDo()">☑️ Chọn Hạ phẩm</button>
             <button class="btn btn-sm btn-primary" onclick="banNhanhDaChon()" ${selValid.length > 0 ? '' : 'disabled'}>
               ⚡ Bán đồ nhanh (${selValid.length} loại · +${tongLtChon.toLocaleString()} LT)
             </button>
           </div>
-          ${
-            dsBanFiltered.length === 0
-              ? '<div class="muted">Túi đồ không có vật phẩm phù hợp để bán.</div>'
-              : dsBanFiltered
-                  .map(id => {
-                    const vp = layVatPhamDef(id);
-                    const sl = soLuongVat(id);
-                    const pc = layPhamChatVatPham(id);
-                    const rankTen = layRankVatPham(vp);
-                    const dangDeo = state.phapBao === id;
-                    const checked = shopSellSelected.has(id);
-                    const gia1 = giaBanVatPham(vp, id);
-                    const giaHet = gia1 * sl;
-                    return `<div class="card-row">
-                      <div style="display:flex;gap:8px;align-items:flex-start;min-width:0">
-                        <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleChonBanDo('${id}')" style="width:auto;margin-top:3px;cursor:pointer" />
-                        <div>
-                          <b>${vp.ten}</b> <span class="badge">${rankTen}</span> <span class="badge ${pc.cls}">${pc.ten}</span> <span class="hl-gold">x${sl}</span> ${dangDeo ? '<span class="hl-green">[Đang đeo]</span>' : ''}
-                          <div class="hl-realm">${moTaVatPhamNgan(vp, id)}</div>
-                          <div class="muted">${vp.moTa}</div>
-                        </div>
-                      </div>
-                      <div class="row-actions">
-                        <button class="btn btn-sm" onclick="banVatPham('${id}', 1)">Bán 1 (+${gia1.toLocaleString()} LT)</button>
-                        ${sl > 1 ? `<button class="btn btn-sm btn-primary" onclick="banVatPham('${id}', ${sl})">Bán hết (+${giaHet.toLocaleString()} LT)</button>` : ''}
-                      </div>
-                    </div>`;
-                  })
-                  .join('')
-          }`;
+          <div id="shop-list-container">${renderShopBanListHtml(q)}</div>`;
       } else {
-        const cards = [];
-        const matchVpType = loai => {
-          if (tp === 'all') return true;
-          if (tp === 'vat_lieu') return loai === 'yeu_dan' || loai === 'linh_vat';
-          return loai === tp;
-        };
-
-        if (['all', 'dan', 'linh_thao', 'phap_bao', 'phu_luc', 'tru_vat', 'vat_lieu'].includes(tp)) {
-          for (const v of kho.items) {
-            if (!matchVpType(v.loai)) continue;
-            if (q && !v.ten.toLowerCase().includes(q) && !(v.moTa || '').toLowerCase().includes(q)) continue;
-            const sKey = v.shopKey || taoItemKey(v.id, v.pcKey || 'trung');
-            const pc = layPhamChatVatPham(sKey);
-            const rankTen = layRankVatPham(v);
-            const giaHien = v.giaShop || Math.max(1, Math.round((v.gia || 0) * pc.heSo));
-            cards.push(`<div class="card-row">
-              <div><b>${v.ten}</b> <span class="badge">${rankTen}</span> <span class="badge ${pc.cls}">${pc.ten}</span> <span class="hl-gold">(${giaHien.toLocaleString()} LT)</span><div class="hl-realm">${moTaVatPhamNgan(v, sKey)}</div><div class="muted">${v.moTa}</div></div>
-              <button class="btn btn-sm" onclick="muaVatPham('vat_pham', '${sKey}')">Mua</button>
-            </div>`);
-          }
-        }
-        if (tp === 'all' || tp === 'cong_phap') {
-          for (const c of kho.congPhap) {
-            if (state.congPhapDaHoc.includes(c.id)) continue;
-            if (q && !c.ten.toLowerCase().includes(q) && !(c.moTa || '').toLowerCase().includes(q)) continue;
-            cards.push(`<div class="card-row">
-              <div><b>[${c.loai === 'BI_THUAT' ? 'Bí thuật' : 'Công pháp'}] ${c.ten}</b> <span class="badge">${layCanhGioiDef(c.canhGioi).ten}</span> <span class="hl-gold">(${(c.gia || 0).toLocaleString()} LT)</span><div class="hl-realm">${moTaCongPhapNgan(c)}</div><div class="muted">${c.moTa}</div></div>
-              <button class="btn btn-sm btn-primary" onclick="muaVatPham('cong_phap', '${c.id}')">Lĩnh ngộ</button>
-            </div>`);
-          }
-        }
-        if (tp === 'all' || tp === 'dan_phuong') {
-          for (const d of kho.danPhuong) {
-            if (state.danPhuongDaHoc.includes(d.id)) continue;
-            if (q && !d.ten.toLowerCase().includes(q)) continue;
-            const giaDp = Math.max(150, Math.round(180 * Math.pow(2.4, d.canhGioi || 1)));
-            cards.push(`<div class="card-row">
-              <div><b>[Đan phương] ${d.ten}</b> <span class="hl-gold">(${giaDp.toLocaleString()} LT)</span><div class="muted">${d.moTa}</div></div>
-              <button class="btn btn-sm" onclick="muaVatPham('dan_phuong', '${d.id}')">Mua phương</button>
-            </div>`);
-          }
-        }
-
         tabBody = `
           <div class="filter-bar">
-            <input id="filter-shop" type="text" placeholder="Tìm tên vật phẩm / công pháp..." value="${escapeHtml(uiFilter.shopQuery)}" oninput="uiFilter.shopQuery=this.value; veCotPhai()" />
+            <input id="filter-shop" type="text" placeholder="Tìm tên vật phẩm / công pháp..." value="${escapeHtml(uiFilter.shopQuery)}" oninput="uiFilter.shopQuery=this.value; capNhatDanhSachShop()" />
             <select style="width:auto" onchange="uiFilter.shopType=this.value; veCotPhai()">
               <option value="all" ${tp === 'all' ? 'selected' : ''}>Tất cả (${kho.items.length + kho.congPhap.length + kho.danPhuong.length})</option>
               <option value="phap_bao" ${tp === 'phap_bao' ? 'selected' : ''}>Trang bị / Pháp bảo</option>
@@ -6544,7 +6639,7 @@ function veCotPhai() {
             </select>
             <button class="btn btn-sm" onclick="lamMoiShopVung()">🔄 Đổi phiên hàng (10 LT)</button>
           </div>
-          ${cards.length > 0 ? cards.join('') : '<div class="muted">Phiên chợ này chưa có mặt hàng phù hợp bộ lọc (thử bấm Đổi phiên hàng hoặc chọn Tất cả).</div>'}`;
+          <div id="shop-list-container">${renderShopMuaListHtml(vung, maxCg, q, tp)}</div>`;
       }
 
       bodyHtml = `
@@ -7084,10 +7179,10 @@ function veCotPhai() {
                   const pc = layPhamChatVatPham(id);
                   const rankTen = layRankVatPham(vp);
                   const dangDeo = state.phapBao === id;
-                  const checkDan = vp.loai === 'dan' ? kiemTraDieuKienDungDan(vp, false) : { ok: true, lyDo: '' };
+                  const checkDan = vp.loai === 'dan' ? kiemTraDieuKienDungDan(vp, false, id) : { ok: true, lyDo: '' };
                   const actBtn =
                     vp.loai === 'dan'
-                      ? `<button class="btn btn-sm ${checkDan.ok ? 'btn-primary' : ''}" onclick="dungVatPham('${id}')" ${checkDan.ok ? '' : `disabled title="${escapeHtml(checkDan.lyDo)}"`}>${checkDan.ok ? 'Phục dụng' : `🔒 ${state.canhGioi < (vp.canhGioi ?? 0) ? `Cần ${layCanhGioiDef(vp.canhGioi ?? 0).ten}` : 'Kháng / Yếu'}`}</button>`
+                      ? `<button class="btn btn-sm ${checkDan.ok ? 'btn-primary' : ''}" onclick="dungVatPham('${id}')" ${checkDan.ok ? '' : `disabled title="${escapeHtml(checkDan.lyDo)}"`}>${checkDan.ok ? 'Phục dụng' : `🔒 ${state.canhGioi < (vp.canhGioi ?? 0) ? `Cần ${layCanhGioiDef(vp.canhGioi ?? 0).ten}` : (vp.hieuUng?.bonusDotPha || 0) > 0 && (state.dotPhaBuff || 0) > 0 ? 'Đã có lực ĐP' : 'Kháng / Yếu'}`}</button>`
                       : vp.loai === 'phap_bao'
                       ? `<button class="btn btn-sm btn-primary" onclick="dungVatPham('${id}')">${dangDeo ? 'Tháo' : 'Trang bị'}</button>`
                       : '';
@@ -7126,11 +7221,15 @@ function veCotPhai() {
       </div>`;
   }
 
+  if (el) el.scrollTop = giuScroll ? prevScrollTop : 0;
+
   if (focusedId && focusedId.startsWith('filter-')) {
     const fEl = document.getElementById(focusedId);
     if (fEl) {
-      fEl.focus();
-      if (typeof selStart === 'number') fEl.setSelectionRange(selStart, selStart);
+      fEl.focus({ preventScroll: true });
+      if (typeof selStart === 'number' && typeof fEl.setSelectionRange === 'function') {
+        fEl.setSelectionRange(selStart, typeof selEnd === 'number' ? selEnd : selStart);
+      }
     }
   }
 }

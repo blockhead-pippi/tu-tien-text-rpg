@@ -1724,7 +1724,7 @@ window.PN_DATA = {
       "canhGioiYeuCau": 2,
       "linhKhi": 1.5,
       "coPhuongThi": true,
-      "moTa": "Hòn đảo phụ thuộc Thiên Tinh Thành thuộc vùng biển Tây Nam Loạn Tinh Hải, có thành trì tu tiên, phuong thị và các linh tuyền cho thuê."
+      "moTa": "Hòn đảo phụ thuộc Thiên Tinh Thành thuộc vùng biển Tây Nam Loạn Tinh Hải, có thành trì tu tiên, phường thị và các linh tuyền cho thuê."
     },
     {
       "id": "loan_tinh_hai",
