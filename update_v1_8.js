@@ -8,6 +8,8 @@
  * ===================================================================== */
 (function () {
   'use strict';
+  // Snapshot từ Excel: không cân bằng lại pháp bảo
+  if (window.PN_DATA_SNAPSHOT) return;
   const DS = (window.PN_DATA && window.PN_DATA.vatPham) || [];
   const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
   const round = x => Math.max(0, Math.round(Number(x) || 0));

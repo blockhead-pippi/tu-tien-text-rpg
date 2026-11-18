@@ -8,6 +8,8 @@
  * ===================================================================== */
 (function () {
   'use strict';
+  // Snapshot từ Excel: dữ liệu đã cân bằng sẵn
+  if (window.PN_DATA_SNAPSHOT) return;
   const CP = (window.PN_DATA && window.PN_DATA.congPhap) || [];
   if (!CP.length) return;
 
@@ -131,6 +133,8 @@
 /* --------------- 2. ÁP DỤNG: TỐC ĐỘ, KỸ NĂNG, TRẦN CẢNH GIỚI --------------- */
 (function () {
   'use strict';
+  // Snapshot từ Excel: không chuẩn hoá lại
+  if (window.PN_DATA_SNAPSHOT) return;
   const CP = (window.PN_DATA && window.PN_DATA.congPhap) || [];
   const H = window.v17Helpers || {};
   const clamp = H.clamp || ((x, a, b) => Math.max(a, Math.min(b, x)));
@@ -199,6 +203,8 @@
 /* --------------- 3. KHỬ TRÙNG & MÔ TẢ THUỘC TÍNH --------------- */
 (function () {
   'use strict';
+  // Snapshot từ Excel: không khử trùng / viết lại mô tả
+  if (window.PN_DATA_SNAPSHOT) return;
   const CP = (window.PN_DATA && window.PN_DATA.congPhap) || [];
   const H = window.v17Helpers || {};
   const clamp = H.clamp || ((x, a, b) => Math.max(a, Math.min(b, x)));

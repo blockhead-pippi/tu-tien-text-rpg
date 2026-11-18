@@ -273,6 +273,8 @@
 /* ------------------------- 4. KINH TẾ KẾT ĐAN ------------------------- */
 (function () {
   'use strict';
+  // Khi dữ liệu đã được import từ Excel (snapshot), không chèn/giảm giá lại
+  if (window.PN_DATA_SNAPSHOT) return;
 
   // Thêm pháp bảo cấp Kết Đan giá hợp lý để lấp khoảng trống trang bị
   const PB_KET_DAN = [

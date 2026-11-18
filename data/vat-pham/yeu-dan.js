@@ -1,0 +1,20 @@
+window.PN_DATA = window.PN_DATA || {};
+window.PN_DATA["vatPham"] = window.PN_DATA["vatPham"] || [];
+window.PN_DATA["vatPham"].push(
+  {"id": "yeu_dan_nhi_cap", "ten": "Nhị Cấp Yêu Đan", "loai": "yeu_dan", "gia": 600, "bac": 2, "moTa": "Nội đan kết tinh pháp lực của yêu thú cấp hai tương đương Trúc Cơ kỳ, dùng luyện đan dược tăng mạnh tu vi.", "he": []},
+  {"id": "yeu_dan_tam_cap", "ten": "Tam Cấp Yêu Đan", "loai": "yeu_dan", "gia": 1000, "bac": 3, "moTa": "Nội đan kết tinh từ yêu thú cấp ba tại Ngoại Tinh Hải, chứa lượng linh lực bàng bạc thích hợp làm chủ dược luyện chế đan dược tăng tiến tu vi Kết Đan sơ kỳ.", "he": []},
+  {"id": "yeu_dan_tu_cap", "ten": "Tứ Cấp Yêu Đan", "loai": "yeu_dan", "gia": 2000, "bac": 3, "moTa": "Yêu đan của yêu thú cấp bốn đã thông linh tính, nguồn năng lượng dồi dào để luyện chế đan dược đột phá trung kỳ Kết Đan.", "he": []},
+  {"id": "yeu_dan_ngu_cap", "ten": "Ngũ Cấp Yêu Đan", "loai": "yeu_dan", "gia": 4500, "bac": 3, "moTa": "Nội đan của yêu thú cấp năm tương đương Kết Đan sơ kỳ, nguyên liệu cốt lõi để luyện đan dược thượng phẩm Loạn Tinh Hải.", "he": []},
+  {"id": "yeu_dan_luc_cap", "ten": "Lục Cấp Yêu Đan", "loai": "yeu_dan", "gia": 8000, "bac": 3, "moTa": "Yêu đan yêu thú cấp sáu hung hãn, chứa sát khí yêu lực cực thịnh, dùng luyện chế các loại linh đan Kết Đan hậu kỳ.", "he": []},
+  {"id": "yeu_dan_that_cap", "ten": "Thất Cấp Yêu Đan", "loai": "yeu_dan", "gia": 15000, "bac": 3, "moTa": "Yêu đan đỉnh phong của yêu thú cấp bảy trước khi hóa hình, nguyên liệu vô giá để luyện chế Hóa Anh Đan và đan dược trùng kích Nguyên Anh kỳ.", "he": []},
+  {"id": "yeu_dan_bat_cap", "ten": "Bát Cấp Yêu Đan", "loai": "yeu_dan", "gia": 30000, "bac": 4, "moTa": "Nội đan của yêu tu hóa hình cấp tám tương đương Nguyên Anh sơ kỳ, ẩn chứa thiên địa quy tắc sơ bộ và linh lực khổng lồ.", "he": []},
+  {"id": "yeu_dan_cuu_cap", "ten": "Cửu Cấp Yêu Đan", "loai": "yeu_dan", "gia": 60000, "bac": 4, "moTa": "Yêu đan cực hiếm của yêu vương cấp chín tương đương Nguyên Anh trung kỳ, dùng luyện chế thánh đan kéo dài thọ nguyên và gia tăng đại lượng tu vi Nguyên Anh.", "he": []},
+  {"id": "yeu_dan_thap_cap", "ten": "Thập Cấp Yêu Đan", "loai": "yeu_dan", "gia": 65000, "bac": 5, "moTa": "Nội đan của đại yêu thú cấp mười tương đương Hóa Thần sơ kỳ, chứa linh lực tinh thuần thượng thừa.", "he": []},
+  {"id": "yeu_dan_thap_nhat_cap", "ten": "Thập Nhất Cấp Yêu Đan", "loai": "yeu_dan", "gia": 85000, "bac": 5, "moTa": "Nội đan của yêu thú cấp mười một tương đương Hóa Thần hậu kỳ, dùng luyện đan dược chuẩn bị trùng kích Luyện Hư.", "he": []},
+  {"id": "yeu_dan_thap_nhi_cap", "ten": "Thập Nhị Cấp Yêu Đan", "loai": "yeu_dan", "gia": 150000, "bac": 6, "moTa": "Yêu đan của cổ thú man hoang cấp mười hai tương đương Luyện Hư sơ kỳ, ẩn chứa sức mạnh huyết mạch thượng cổ cực hạn.", "he": []},
+  {"id": "yeu_dan_thap_tam_cap", "ten": "Thập Tam Cấp Yêu Đan", "loai": "yeu_dan", "gia": 200000, "bac": 6, "moTa": "Nội đan vương giả của thú vương cấp mười ba tương đương Luyện Hư hậu kỳ, bảo vật vô giá để luyện đan trùng kích Hợp Thể kỳ.", "he": []},
+  {"id": "yeu_dan_thap_tu_cap", "ten": "Thập Tứ Cấp Yêu Đan", "loai": "yeu_dan", "gia": 350000, "bac": 7, "moTa": "Nội đan của Cổ Thú vương giả cấp mười bốn tương đương Hợp Thể sơ kỳ, chứa đựng yêu lực tinh thuần vô song.", "he": []},
+  {"id": "yeu_dan_thap_ngu_cap", "ten": "Thập Ngũ Cấp Yêu Đan", "loai": "yeu_dan", "gia": 450000, "bac": 7, "moTa": "Yêu đan của hung thú man hoang cấp mười lăm tương đương Hợp Thể hậu kỳ, nguyên liệu luyện đan đột phá Đại Thừa kỳ.", "he": []},
+  {"id": "yeu_dan_thap_luc_cap", "ten": "Thập Lục Cấp Yêu Đan", "loai": "yeu_dan", "gia": 700000, "bac": 8, "moTa": "Nội đan của thánh thú cấp mười sáu tương đương cảnh giới Đại Thừa, ẩn chứa sức mạnh càn khôn bàng bạc.", "he": []},
+  {"id": "yeu_dan_thap_that_cap", "ten": "Thập Thất Cấp Chân Linh Đan", "loai": "yeu_dan", "gia": 1200000, "bac": 9, "moTa": "Nội hạch của Chân Linh thú cấp mười bảy ngang ngửa Độ Kiếp kỳ, ẩn chứa trọn vẹn một đạo pháp tắc thiên địa hoàn chỉnh.", "he": []}
+);

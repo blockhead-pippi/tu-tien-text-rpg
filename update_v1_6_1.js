@@ -9,6 +9,8 @@
  * ===================================================================== */
 (function () {
   'use strict';
+  // Snapshot từ Excel: bỏ qua chuyển hoá đan (đã là dữ liệu cuối)
+  if (window.PN_DATA_SNAPSHOT) return;
 
   const PHAN_LOAI = {
     dan_thanh_tam: 'mp', dan_hoang_long: 'hp', dan_kim_tuy: 'tv',
@@ -63,6 +65,8 @@
 /* ------------------- 2. BỔ SUNG ĐAN CÒN THIẾU ------------------- */
 (function () {
   'use strict';
+  // Snapshot từ Excel: đan mới đã có trong dữ liệu
+  if (window.PN_DATA_SNAPSHOT) return;
 
   function moTa(cat, cg, hu) {
     let ten = 'tu sĩ';

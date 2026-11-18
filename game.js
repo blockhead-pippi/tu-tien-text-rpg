@@ -3,6 +3,7 @@
 
 const SAVE_KEY = 'pn_tu_tien_save_v2';
 const THEME_KEY = 'pn_tu_tien_theme_v1';
+const LOG_HIDDEN_KEY = 'pn_tu_tien_log_hidden_v1';
 const MAX_LINH_DIEN = 9;
 const MAX_BI_THUAT = 3;
 const MAX_TUI_DO_O = 100;
@@ -12,6 +13,7 @@ let activeTab = 'dong_phu'; // 'dong_phu' | 'dia_diem' | 'npc' | 'ban_do' | 'tui
 let diaDiemSubTab = 'kham_pha'; // 'kham_pha' | 'cua_hang' | 'tong_mon' | 'nha_npc'
 let selectedNpcId = null;
 let shopSellSelected = new Set();
+let isLogHidden = false;
 
 const uiFilter = {
   shopQuery: '',
@@ -6120,6 +6122,26 @@ function doiTheme() {
   apDungTheme((document.documentElement.getAttribute('data-theme') || 'dark') === 'dark' ? 'light' : 'dark');
 }
 
+// Ẩn / Hiện Biên Niên Sử Tu Tiên (Tác giả: Gemini (Antigravity))
+function apDungTrangThaiBienNienSu(hidden) {
+  isLogHidden = Boolean(hidden);
+  try {
+    localStorage.setItem(LOG_HIDDEN_KEY, isLogHidden ? '1' : '0');
+  } catch (e) {}
+  const elLog = document.getElementById('main-log');
+  const btn = document.getElementById('btn-toggle-log');
+  if (elLog) elLog.classList.toggle('collapsed', isLogHidden);
+  if (btn) {
+    btn.textContent = isLogHidden ? '👁️ Hiện' : '🙈 Ẩn';
+    btn.title = isLogHidden ? 'Hiện Biên Niên Sử Tu Tiên' : 'Ẩn Biên Niên Sử Tu Tiên cho gọn giao diện';
+    btn.setAttribute('aria-expanded', isLogHidden ? 'false' : 'true');
+  }
+}
+
+function doiTrangThaiBienNienSu() {
+  apDungTrangThaiBienNienSu(!isLogHidden);
+}
+
 function chonTab(tab) {
   if (tab === 'tong_mon') {
     activeTab = 'dia_diem';
@@ -6175,6 +6197,9 @@ function veManHinhKhoiTaoBlank() {
   if (mainLog) {
     mainLog.innerHTML = '<div class="muted">Chưa có biên niên sử nào.</div>';
   }
+  const elLogCount = document.getElementById('log-count');
+  if (elLogCount) elLogCount.textContent = '';
+  apDungTrangThaiBienNienSu(isLogHidden);
   if (tabContent) {
     tabContent.innerHTML = '<div class="muted">Hãy hoàn tất tạo nhân vật để mở khóa Động Phủ, Địa Điểm, Quan Hệ, Bản Đồ và Túi Đồ.</div>';
   }
@@ -6466,6 +6491,11 @@ function veCotGiua() {
       </div>`
     )
     .join('');
+  const elLogCount = document.getElementById('log-count');
+  if (elLogCount) {
+    elLogCount.textContent = state.nhatKy && state.nhatKy.length > 0 ? `(${state.nhatKy.length})` : '';
+  }
+  apDungTrangThaiBienNienSu(isLogHidden);
 
   if (interactionKey !== 'idle' && interactionKey !== lastInteractionKey && typeof elInteraction.scrollIntoView === 'function') {
     elInteraction.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -7891,6 +7921,7 @@ window.addEventListener('DOMContentLoaded', () => {
     window.NhanGioiMap.setAdapter(taoMapAdapter());
   }
   apDungTheme(localStorage.getItem(THEME_KEY) || 'dark');
+  apDungTrangThaiBienNienSu(localStorage.getItem(LOG_HIDDEN_KEY) === '1');
   try { localStorage.removeItem('pn_tu_tien_ai_cfg_v1'); } catch (e) {}
   if (!taiGame()) {
     state = null;

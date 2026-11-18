@@ -1,0 +1,9 @@
+window.PN_DATA = window.PN_DATA || {};
+window.PN_DATA["linhCan"] = [
+  {"id": "ngu_hanh_tap", "ten": "Ngũ Hành Tạp Linh Căn (Ngụy)", "bonusChienDau": 0, "bonusDotPha": -0.05, "hePool": ["KIM", "MOC", "THUY", "HOA", "THO"], "heSoTuLuyen": 0.7, "moTa": "Đủ 5 hệ Kim·Mộc·Thủy·Hỏa·Thổ hỗn tạp: tu luyện chậm nhưng hợp mọi công pháp Ngũ hành.", "soHe": 5, "trongSo": 28},
+  {"id": "tu_linh_can", "ten": "Tứ Linh Căn (Ngụy Linh Căn)", "bonusChienDau": 0, "bonusDotPha": -0.02, "hePool": ["KIM", "MOC", "THUY", "HOA", "THO"], "heSoTuLuyen": 0.9, "moTa": "Mang 4 hệ Ngũ hành, tư chất hạ đẳng nhưng dễ tìm công pháp tương thích.", "soHe": 4, "trongSo": 26},
+  {"id": "tam_linh_can", "ten": "Tam Linh Căn (Chân Linh Căn)", "bonusChienDau": 0.05, "bonusDotPha": 0.04, "hePool": ["KIM", "MOC", "THUY", "HOA", "THO"], "heSoTuLuyen": 1.15, "moTa": "Mang 3 hệ Ngũ hành tinh thuần hơn, đủ tư chất làm đệ tử nội môn các đại tông môn.", "soHe": 3, "trongSo": 22},
+  {"id": "song_linh_can", "ten": "Song Linh Căn (Thượng Phẩm)", "bonusChienDau": 0.08, "bonusDotPha": 0.1, "hePool": ["KIM", "MOC", "THUY", "HOA", "THO"], "heSoTuLuyen": 1.45, "moTa": "Chỉ mang 2 hệ Ngũ hành, hấp thu linh khí nhanh và dễ luyện công pháp song hệ.", "soHe": 2, "trongSo": 13},
+  {"id": "di_linh_can", "ten": "Dị Linh Căn (Biến Dị)", "bonusChienDau": 0.18, "bonusDotPha": 0.15, "hePool": ["LOI", "BANG", "PHONG", "AM"], "heSoTuLuyen": 1.75, "moTa": "Linh căn biến dị đơn hệ (Lôi/Băng/Phong/Ám), sát phạt cực mạnh nếu hợp công pháp.", "soHe": 1, "trongSo": 7},
+  {"id": "thien_linh_can", "ten": "Thiên Linh Căn (Đơn Hệ Thuần Khiết)", "bonusChienDau": 0.12, "bonusDotPha": 0.25, "hePool": ["KIM", "MOC", "THUY", "HOA", "THO"], "heSoTuLuyen": 2, "moTa": "Đơn hệ thuần khiết nhất (Kim/Mộc/Thủy/Hỏa/Thổ), tốc độ tu hành và đột phá vượt trội.", "soHe": 1, "trongSo": 4}
+];
