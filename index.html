@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<!-- Tác giả: Gemini (Antigravity) -->
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phàm Nhân Tu Tiên — Sandbox Biên Niên (Text Game)</title>
+  <style>
+    /* ==========================================
+       1. HỆ THỐNG BIẾN MÀU: DARK THEME & LIGHT THEME
+       ========================================== */
+    :root,
+    [data-theme="dark"] {
+      --bg: #121316;
+      --bg-panel: #1a1c21;
+      --bg-card: #22252c;
+      --bg-input: #15171c;
+      --text: #e6e1d6;
+      --text-muted: #9a9488;
+      --border: #323640;
+      --accent: #d4a359;
+      --accent-hover: #e5b76e;
+      --realm: #67c2e4;
+      --green: #6bc48d;
+      --gold: #f0c36d;
+      --danger: #e06c75;
+      --ai: #b589f6;
+      --shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+    }
+
+    [data-theme="light"] {
+      --bg: #f4efe4;
+      --bg-panel: #fbf8f1;
+      --bg-card: #efe8d8;
+      --bg-input: #ffffff;
+      --text: #221e1a;
+      --text-muted: #6b6257;
+      --border: #d5cbb8;
+      --accent: #9b2c2c;
+      --accent-hover: #7f2222;
+      --realm: #1e5f8a;
+      --green: #1f6f43;
+      --gold: #9c6812;
+      --danger: #b82525;
+      --ai: #6334a8;
+      --shadow: 0 4px 14px rgba(60, 45, 25, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Noto Serif", Georgia, "Times New Roman", serif;
+      font-size: 15px;
+      line-height: 1.55;
+    }
+
+    /* ==========================================
+       2. THANH TIÊU ĐỀ & BỐ CỤC 3 CỘT
+       ========================================== */
+    .topbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      font-size: 18px;
+      font-weight: bold;
+      color: var(--accent);
+      letter-spacing: 0.03em;
+    }
+
+    .top-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 310px 1fr 450px;
+      gap: 14px;
+      max-width: 1620px;
+      margin: 14px auto;
+      padding: 0 14px 20px;
+      min-height: calc(100vh - 76px);
+    }
+
+    @media (max-width: 1180px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-title {
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+      margin-bottom: 10px;
+    }
+
+    /* ==========================================
+       3. CHỈ SỐ & THANH TIẾN ĐỘ
+       ========================================== */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      padding: 4px 0;
+      border-bottom: 1px dashed rgba(150, 150, 150, 0.15);
+      font-size: 13.5px;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 6px 0 4px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--realm);
+      transition: width 0.25s ease;
+    }
+
+    .hl-realm { color: var(--realm); }
+    .hl-green { color: var(--green); }
+    .hl-gold { color: var(--gold); }
+    .hl-danger { color: var(--danger); }
+    .muted { color: var(--text-muted); font-size: 13px; }
+
+    /* ==========================================
+       4. MÀN HÌNH SỰ KIỆN, HÀNH ĐỘNG & NHẬT KÝ
+       ========================================== */
+    .event-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .combat-box { border-color: var(--danger); }
+
+    .event-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .event-text {
+      margin: 8px 0 14px;
+      white-space: pre-line;
+    }
+
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .choice-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .combat-log-mini {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin: 8px 0;
+      font-size: 13.5px;
+    }
+
+    .log-container {
+      flex: 1;
+      max-height: 460px;
+      overflow-y: auto;
+      padding-right: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .log-entry {
+      padding: 8px 10px;
+      background: var(--bg-card);
+      border-left: 3px solid var(--border);
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .log-tot { border-left-color: var(--green); }
+    .log-dai_cat { border-left-color: var(--gold); }
+    .log-canh_bao { border-left-color: var(--accent); }
+    .log-nguy_hiem { border-left-color: var(--danger); }
+    .log-he_thong { border-left-color: var(--ai); }
+
+    .log-year {
+      font-weight: bold;
+      color: var(--accent);
+      margin-right: 6px;
+    }
+
+    /* ==========================================
+       5. NÚT BẤM, TAB, LỌC & THẺ DỮ LIỆU
+       ========================================== */
+    .btn {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-family: inherit;
+      font-size: 14px;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: var(--bg-panel);
+    }
+
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 12.5px;
+      text-align: center;
+    }
+
+    .btn-primary {
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: bold;
+    }
+
+    .btn-ai {
+      border-color: var(--ai);
+      color: var(--ai);
+      font-weight: bold;
+    }
+
+    .btn-danger {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .tab-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+
+    .tab-btn {
+      background: var(--bg-card);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 5px 9px;
+      font-family: inherit;
+      font-size: 12.5px;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-color: var(--accent);
+      font-weight: bold;
+    }
+
+    .tab-body {
+      flex: 1;
+      max-height: 640px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .sub-section { margin-bottom: 16px; }
+
+    .sub-title {
+      font-weight: bold;
+      color: var(--accent);
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+
+    .filter-bar input[type="text"] { flex: 1; min-width: 140px; }
+
+    .card-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      font-size: 13.5px;
+    }
+
+    .row-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .npc-selector {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 150px;
+      overflow-y: auto;
+      padding: 2px 0;
+    }
+
+    .ai-chat-box {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+    }
+
+    .npc-memory {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .memory-line { margin-bottom: 4px; }
+
+    .chat-input-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    select {
+      width: 100%;
+      padding: 7px 10px;
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 13.5px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 11.5px;
+      border: 1px solid var(--border);
+      background: var(--bg-panel);
+      color: var(--text-muted);
+    }
+
+    /* ==========================================
+       6. HỘP THOẠI MODAL (CÀI ĐẶT AI & ROLL KIẾP MỚI)
+       ========================================== */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.65);
+      display: none;
+      place-items: center;
+      z-index: 100;
+      padding: 16px;
+    }
+
+    .modal-backdrop.open { display: grid; }
+
+    .modal-box {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 18px;
+      width: 100%;
+      max-width: 580px;
+      max-height: 92vh;
+      overflow-y: auto;
+      box-shadow: var(--shadow);
+    }
+
+    .form-group { margin-bottom: 10px; }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .roll-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .roll-preview {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 10px 12px;
+      font-size: 13px;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- THANH TIÊU ĐỀ TRÊN CÙNG -->
+  <header class="topbar">
+    <div class="brand">☯ PHÀM NHÂN TU TIÊN — SANDBOX BIÊN NIÊN</div>
+    <div class="top-actions">
+      <button id="btn-theme" class="btn btn-sm" onclick="doiTheme()">☀️ Đổi sang Light Theme</button>
+      <button class="btn btn-sm btn-ai" onclick="moModalAi()">⚙️ Cài đặt AI (Gemini / OpenRouter)</button>
+      <button class="btn btn-sm" onclick="xuatSaveFile()">💾 Xuất Save (.json)</button>
+      <label class="btn btn-sm" style="cursor:pointer">
+        📂 Nhập Save
+        <input type="file" accept=".json" style="display:none" onchange="nhapSaveFile(event)" />
+      </label>
+      <button class="btn btn-sm btn-danger" onclick="moModalKiepMoi()">🎲 Tân Tu (Roll Kiếp Mới)</button>
+    </div>
+  </header>
+
+  <!-- BỐ CỤC 3 CỘT CHÍNH -->
+  <main class="layout">
+    <!-- CỘT 1: TRẠNG THÁI NHÂN VẬT -->
+    <section id="col-status" class="panel"></section>
+
+    <!-- CỘT 2: TƯƠNG TÁC CHÍNH & NHẬT KÝ -->
+    <section class="panel">
+      <div id="main-interaction"></div>
+      <div class="panel-title">📖 BIÊN NIÊN SỬ TU TIÊN</div>
+      <div id="main-log" class="log-container"></div>
+    </section>
+
+    <!-- CỘT 3: ĐỘNG PHỦ / ĐỊA ĐIỂM HIỆN TẠI / NPC / BẢN ĐỒ / TÚI ĐỒ -->
+    <section class="panel">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="dong_phu" onclick="chonTab('dong_phu')">🏡 Động Phủ</button>
+        <button class="tab-btn" id="tab-btn-dia_diem" data-tab="dia_diem" onclick="chonTab('dia_diem')">📍 Địa Điểm</button>
+        <button class="tab-btn" data-tab="npc" onclick="chonTab('npc')">🤝 Quan Hệ</button>
+        <button class="tab-btn" data-tab="ban_do" onclick="chonTab('ban_do')">🗺️ Bản Đồ</button>
+        <button class="tab-btn" data-tab="tui_do" onclick="chonTab('tui_do')">🎒 Túi Đồ</button>
+      </div>
+      <div id="tab-content" class="tab-body"></div>
+    </section>
+  </main>
+
+  <!-- MODAL 1: CÀI ĐẶT 2 API KEY (GEMINI & OPENAI / OPENROUTER) -->
+  <div id="modal-ai" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="panel-title">⚙️ CÀI ĐẶT KẾT NỐI AI (LƯU TRÊN TRÌNH DUYỆT)</div>
+      <p class="muted" style="margin-top:0">
+        Bạn có thể nhập sẵn cả 2 API Key (Google Gemini và OpenAI / OpenRouter) rồi chọn nguồn muốn dùng. Key chỉ lưu trong <code>localStorage</code> trên máy của bạn.
+      </p>
+
+      <div class="form-group">
+        <label>Nguồn AI đang sử dụng:</label>
+        <select id="ai-provider">
+          <option value="gemini">Google Gemini API</option>
+          <option value="openai">OpenAI / OpenRouter API</option>
+        </select>
+      </div>
+
+      <hr style="border:none;border-top:1px dashed var(--border);margin:12px 0" />
+
+      <div class="form-group">
+        <label>1. Google Gemini API Key:</label>
+        <input id="gemini-key" type="password" placeholder="AIzaSy..." />
+      </div>
+      <div class="form-group">
+        <label>Gemini Model:</label>
+        <input id="gemini-model" type="text" value="gemini-2.5-flash" placeholder="gemini-2.5-flash" />
+      </div>
+
+      <hr style="border:none;border-top:1px dashed var(--border);margin:12px 0" />
+
+      <div class="form-group">
+        <label>2. OpenAI / OpenRouter API Key:</label>
+        <input id="openai-key" type="password" placeholder="sk-or-v1-... hoặc sk-..." />
+      </div>
+      <div class="form-group">
+        <label>Base URL (OpenRouter hoặc OpenAI):</label>
+        <input id="openai-url" type="text" value="https://openrouter.ai/api/v1" placeholder="https://openrouter.ai/api/v1" />
+      </div>
+      <div class="form-group">
+        <label>OpenAI / OpenRouter Model:</label>
+        <input id="openai-model" type="text" value="openai/gpt-4o-mini" placeholder="openai/gpt-4o-mini" />
+      </div>
+
+      <div class="row-actions" style="justify-content:flex-end;margin-top:14px">
+        <button class="btn btn-sm" onclick="dongModalAi()">Đóng</button>
+        <button class="btn btn-sm btn-primary" onclick="luuTuModalAi()">💾 Lưu Cấu Hình AI</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: ROLL NHÂN VẬT & KHỞI TẠO KIẾP MỚI (SANDBOX) -->
+  <div id="modal-newgame" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="panel-title">🎲 TẠO NHÂN VẬT NGẪU NHIÊN — BƯỚC VÀO TU TIÊN GIỚI</div>
+
+      <div class="roll-grid">
+        <div class="form-group">
+          <label>Đạo hiệu nhân vật:</label>
+          <div class="chat-input-row">
+            <input id="new-name" type="text" placeholder="Tự nhập hoặc bấm xúc xắc..." />
+            <button type="button" class="btn btn-sm" onclick="rollTenNhanVat()" title="Roll tên ngẫu nhiên">🎲</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Giới tính:</label>
+          <select id="new-gender" onchange="rollTenNhanVat()">
+            <option value="nam">Nam tu sĩ</option>
+            <option value="nu">Nữ tu sĩ</option>
+          </select>
+        </div>
+      </div>
+
+      <p class="muted" style="margin:4px 0 8px">Chỉ được tùy chỉnh <b>Đạo hiệu</b> và <b>Giới tính</b>; Linh căn, Thể chất và Xuất thân đều được thiên đạo gieo quẻ ngẫu nhiên.</p>
+
+      <div id="roll-preview" class="roll-preview"></div>
+
+      <div class="row-actions" style="justify-content:space-between;margin-top:14px">
+        <button type="button" class="btn btn-sm btn-ai" onclick="rollTatCaNhanVat(true)">🎲 Roll Ngẫu Nhiên Thuộc Tính</button>
+        <div class="row-actions">
+          <button type="button" class="btn btn-sm" onclick="dongModalKiepMoi()">Hủy</button>
+          <button type="button" class="btn btn-sm btn-primary" onclick="xacNhanKiepMoi()">🌟 Bước Vào Tu Tiên Giới</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
