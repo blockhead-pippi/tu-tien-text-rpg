@@ -1,6 +1,9 @@
-# CHANGELOG:
+# CHANGELOG — PHÀM NHÂN TU TIÊN: SANDBOX BIÊN NIÊN
 
-## v1.1.0 — "QoL + Tempo + Discoverability"
+## v1.1.0 — "QoL + Tempo + Discoverability" (bản cập nhật này)
+
+Bản cập nhật tập trung vào 3 việc: **làm rõ thông tin**, **giảm mỏi tay**, và **giúp người chơi tìm ra các hệ thống đã có sẵn** trong game.
+Không thay đổi cấu trúc save cũ (save v2 vẫn đọc được).
 
 ### 1) Sửa lỗi & trải nghiệm (QoL)
 - **Favicon**: thêm icon SVG inline → hết lỗi console `favicon.ico 404`.
@@ -395,3 +398,63 @@
 - Chỉ cân bằng **thuộc tính/giá/hệ**, không thêm/xoá ID; trang bị đang mặc và trong túi giữ nguyên.
 - Áp dụng runtime qua `update_v1_8.js` (không sửa tay 121 entry trong `data.js`).
 - Save hiện tại: **Kết Đan Đại Viên Mãn** · năm **223** · **137.269 TV** · **6.976 LT**.
+
+---
+
+## v1.8.1 — "Bản đồ Nhân Giới · 100% Offline · Cân bằng NPC & Yêu thú"
+
+*(Tác giả: Gemini (Antigravity))*
+
+### Thay đổi chính
+1. **🗺️ Bản Đồ Nhân Giới Tương Tác (`map.css`, `map_data.js`, `map.js`)**:
+   - Tích hợp bản đồ SVG tương tác phong cách *Vạn Kiếp Tu Tiên*: click trực tiếp địa danh hoặc điểm cơ duyên động để độn quang di chuyển & kích hoạt sự kiện tại chỗ; đồng bộ 2 chiều với `game.js`.
+2. **📴 Chế độ 100% Offline**:
+   - Xóa hoàn toàn cài đặt API Key, hộp thoại AI online và các lệnh gọi mạng (`fetch`), chuyển toàn bộ lịch luyện/đối thoại sang hệ thống offline nội bộ.
+3. **📖 Thu gọn Biên Niên Sử**:
+   - Bổ sung nút **🙈 Ẩn / 👁️ Hiện** ngay cạnh tiêu đề `📖 BIÊN NIÊN SỬ TU TIÊN`, lưu trạng thái vào `localStorage`.
+4. **⚔️ Cân bằng chỉ số toàn bộ NPC & Yêu thú + Hiển thị tiểu cảnh giới**:
+   - Chuẩn hóa lại chỉ số **HP / Công / Thủ** cho toàn bộ **73 NPC** và **43 Yêu thú** từ Phàm Nhân → Đại Thừa (`CHI_SO_CHUAN_CG`), tự động nâng cấp chỉ số NPC trong save cũ khi tải game.
+   - Trong giao diện Đấu Pháp, hiển thị chính xác **tiểu cảnh giới** đối thủ (ví dụ `Trúc Cơ — Trung Kỳ`, `Kết Đan — Đỉnh Phong`).
+
+---
+
+## v1.9.0 — "Hàn Lập & Biên Niên Nguyên Tác · Linh Thú · Kim Đan/Nguyên Anh · Huyết Sắc · Sư Đồ"
+
+*(Tác giả: Gemini (Antigravity))*
+
+### 1) Tính năng Tiên hiệp & Nguyên tác mới (`update_v1_9.js`)
+1. **🌟 NPC Hàn Lập & Biên Niên Nguyên Tác (Khán giả / Tham gia)**:
+   - Bổ sung NPC nguyên tác **Hàn Lập** (`npc_han_lap`, Tứ Linh Căn, xuất phát tại Kính Châu — Thất Huyền Môn) vào `data/npc/viet-quoc.js` và `data/game-data.xlsx`; tự động đồng bộ vào cả save cũ.
+   - **8 Đại Biến Thế Giới** vận hành độc lập theo dòng năm tiểu thuyết *Phàm Nhân Tu Tiên*:
+     - *Năm 4:* Loạn Dã Lang Bang tại Thất Huyền Môn
+     - *Năm 10:* Thái Nam Tiểu Hội & Thăng Tiên Đại Hội
+     - *Năm 18:* Đại Hội Huyết Sắc Cấm Địa Thất Đại Phái
+     - *Năm 36:* Ma Đạo Lục Tông xâm lược Việt Quốc (Hàn Lập vượt Cổ Truyền Tống Trận sang Loạn Tinh Hải)
+     - *Năm 65:* Hư Thiên Điện mở cửa tại Loạn Tinh Hải (Hàn Lập đoạt Hư Thiên Đỉnh)
+     - *Năm 95:* Đại chiến Mộ Lan Pháp Sĩ xâm lăng Thiên Nam
+     - *Năm 135:* Côn Ngô Sơn khai phong tại Đại Tấn — Cổ Ma xuất thế
+     - *Năm 180:* Không Gian Tiết Điểm Băng Đảo — Hàn Lập phi thăng Linh Giới
+   - Tại mỗi mốc, Hàn Lập tự động cập nhật cảnh giới, địa điểm, danh hiệu & biên niên; người chơi luôn có quyền chọn **👁️ Đứng ngoài quan sát (Làm khán giả)** an toàn hoặc **trực tiếp nhập cuộc**. Bổ sung bảng theo dõi tung tích Hàn Lập & mốc nguyên tác trong tab **🗺️ Bản Đồ**.
+2. **🐾 Hệ thống Linh Thú Đồng Hành** *(KHÔNG có Chưởng Thiên Bình cho người chơi — vật phẩm thuộc về Hàn Lập)*:
+   - Mục **🐾 Linh Thú Đường** trong Động Phủ với 6 loài kinh điển: *Phệ Kim Trùng (Ấu Trùng)*, *Lục Dực Sương Ngô*, *Xích Hỏa Giao (Ấu Thú)*, *Lôi Bằng Ấu Điểu*, *Huyền Vũ Linh Quy*, *Thiết Giáp Linh Hầu*.
+   - Hỗ trợ **Thu phục**, **Cho ăn Yêu Đan / Linh thạch**, **Huấn luyện** tăng độ Thân mật, **Tiến giai**, cộng chỉ số bị động vĩnh viễn và **tự động xuất kích trợ chiến** (Phá giáp / Hàn khí / Thiêu đốt / Hộ thuẫn / Xuất huyết) trong trận đấu.
+3. **✨ Phẩm chất Kim Đan (CG3) & Nguyên Anh (CG4)**:
+   - Đột phá lên Kết Đan / Nguyên Anh xét tổng điểm chuẩn bị (phẩm chất đan đột phá, hợp hệ công pháp, Căn cốt/Ngộ tính/Thần thức, Linh căn) để định phẩm **Hạ Phẩm → Trung Phẩm → Thượng Phẩm → Cửu Chuyển (Cực Phẩm)**, gia trì vĩnh viễn HP/MP, Công/Thủ, Tốc độ tu luyện & Thọ nguyên và hiển thị trực tiếp trong **Đạo Tịch Tu Sĩ**.
+4. **🩸 Đại Hội Thí Luyện Huyết Sắc Cấm Địa Liên Tông**:
+   - Mở 5 năm/lần dành riêng cho tu sĩ **Luyện Khí kỳ** tại khu vực Việt Quốc (tab **📍 Địa Điểm → Khám Phá**): chọn chiến lược hái linh thảo ngoài rìa chạm mặt Hàn Lập, xông trung tâm chiến Phong Nhạc tranh **Trúc Cơ Đan**, hoặc yểm trợ đồng môn cày Cống hiến Thất Phái.
+5. **💞 Mở rộng Đạo Lữ & 🎓 Hệ thống Sư Đồ**:
+   - **Đạo Lữ:** Nút **💞 Song Tu Đạo Lữ (1 năm · x1.35 Tu vi)** hồi đầy HP/MP, giảm 1 bậc thương thế & ổn định Tâm Ma; khi bị cừu nhân truy sát, Đạo Lữ tự động tiếp ứng (-20% HP địch & hợp kích trong trận).
+   - **Sư Đồ (mở từ Kết Đan):** Mục **🎓 Môn Hạ Sư Đồ** trong Động Phủ cho chiêu thu tối đa 3 đệ tử, **truyền thụ công pháp cũ** không dùng nữa để đệ tử tự tu luyện, đột phá và cống nạp Linh thạch hàng năm.
+
+### 2) Bản vá lỗi & cải thiện trải nghiệm sau playtest Kết Đan
+1. **Bố cục Bản Đồ**: Chuyển nút `🗺️ Bản Đồ` lên thanh Topbar (`#btn-topbar-map`) và ẩn nút nổi `#nkLauncher` ở góc dưới-phải → hết che khuất nút ở cột phải.
+2. **Hồi Linh lực khi HP đầy**: Khi HP đầy nhưng MP < 90%, hiện nút `🧘 Tĩnh tọa hồi linh (1 tháng)` hồi +65% Linh lực.
+3. **Tách 2 chế độ Tốc chiến**: `⚡ Tốc chiến (Tiết kiệm LL)` (Pháp bảo + đánh thường, tự hồi/thủ khi HP < 48%) và `🔥 Tốc chiến (Toàn lực)`.
+4. **Đánh úp `hpMult` & cảnh báo địch**: Giữ nguyên `hpDichMax` gốc khi đánh úp làm giảm máu địch; ước lượng hiển thị tiểu cảnh giới cho Yêu thú/quái và gắn nhãn `⚠️ Nguy hiểm` khi địch mạnh vượt trội.
+5. **So sánh trang bị & làm sạch dữ liệu**: Lọc sạch tag nội bộ `【v1.8】` khỏi mô tả UI; khóa sẵn nút `Trang bị` kèm `🔒 Cần ...` cho Pháp bảo vượt cấp; hiển thị dòng so sánh `⚖️ So với đang đeo / chủ tu` trong Cửa Hàng, Túi Đồ và Tàng Kinh Các; sửa chức danh *Vương Hóa Vũ* (`Chấp Sự Trưởng lão`) và mô tả *Thanh Tật Kiếm* (đã đồng bộ cả vào `data/game-data.xlsx`).
+6. **Bảo Khố & Tàng Kinh Các phân tầng theo chức vị**: Nội Môn / Chân Truyền / Trưởng Lão mở khóa đúng đan dược (Trúc Cơ Đan, Giáng Trần Đan...), pháp bảo và công pháp ngang cảnh giới.
+
+### 3) Đã kiểm thử & đồng bộ
+- **Bộ test tự động Node VM (`test_v19_all.js`)**: 10/10 nhóm test pass 100%.
+- **Kiểm thử trực tiếp trên trình duyệt** (save *Bạch Lăng Vân — Kết Đan Sơ Kỳ*): xác minh Topbar Bản Đồ, Linh Thú *Phệ Kim Trùng* trợ chiến, Sư Đồ thu nhận & truyền công, NPC *Hàn Lập* + sự kiện Nguyên tác, Túi Đồ, Cửa Hàng, Tàng Kinh & Bảo Khố Kết Đan, Tốc chiến Tiết kiệm LL — **0 lỗi Console / Page Error**.
+- **Đồng bộ Excel**: cập nhật `data/game-data.xlsx` (74 NPC, 43 Yêu thú, 121 Trang bị) và kiểm tra `python tools/import_excel.py --dry-run` pass sạch.
