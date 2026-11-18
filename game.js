@@ -5887,8 +5887,43 @@ function thamNhaNpc(npcId) {
   veGiaoDien();
 }
 
+// Màn hình trống trước khi người chơi roll & xác nhận nhân vật Kiếp 1 (Tác giả: Gemini (Antigravity))
+function veManHinhKhoiTaoBlank() {
+  const colStatus = document.getElementById('col-status');
+  const mainInter = document.getElementById('main-interaction');
+  const mainLog = document.getElementById('main-log');
+  const tabContent = document.getElementById('tab-content');
+  const tabDiaDiemBtn = document.getElementById('tab-btn-dia_diem');
+
+  if (tabDiaDiemBtn) tabDiaDiemBtn.textContent = '📍 Địa Điểm';
+  if (colStatus) {
+    colStatus.innerHTML = `
+      <div class="panel-title">📜 ĐẠO TỊCH TU SĨ</div>
+      <p class="muted">Chưa có thông tin nhân vật. Hãy tự gieo quẻ chọn Đạo hiệu, Linh căn, Thể chất và Xuất thân rồi nhấn <b>Bước Vào Tu Tiên Giới</b> để bắt đầu Kiếp 1.</p>
+    `;
+  }
+  if (mainInter) {
+    mainInter.innerHTML = `
+      <div class="event-box">
+        <div class="event-title">🎲 KHỞI ĐẦU KIẾP TU TIÊN</div>
+        <p class="muted">Thế giới đang chờ bạn gieo quẻ định mệnh cho nhân vật đầu tiên.</p>
+        <button class="btn btn-primary" onclick="moModalKiepMoi()">🎲 Tạo Nhân Vật (Kiếp 1)</button>
+      </div>
+    `;
+  }
+  if (mainLog) {
+    mainLog.innerHTML = '<div class="muted">Chưa có biên niên sử nào.</div>';
+  }
+  if (tabContent) {
+    tabContent.innerHTML = '<div class="muted">Hãy hoàn tất tạo nhân vật để mở khóa Động Phủ, Địa Điểm, Quan Hệ, Bản Đồ và Túi Đồ.</div>';
+  }
+}
+
 function veGiaoDien() {
-  if (!state) return;
+  if (!state) {
+    veManHinhKhoiTaoBlank();
+    return;
+  }
 
   const lcDef = layLinhCanDef();
   const tcDef = layTheChatDef();
@@ -6217,6 +6252,7 @@ function lamMoiShopVung() {
 }
 
 function veCotPhai() {
+  if (!state) return;
   const focusedId = document.activeElement && document.activeElement.id;
   const selStart = focusedId && focusedId.startsWith('filter-') ? document.activeElement.selectionStart : null;
 
@@ -7249,6 +7285,7 @@ function nhapSaveFile(event) {
       const parsed = JSON.parse(reader.result);
       if (parsed && parsed.ten && typeof parsed.canhGioi === 'number') {
         state = parsed;
+        dongModalKiepMoi();
         luuGame();
         ghiNhatKy('📂 Đã tải ngọc giản lưu trữ thành công!', 'he_thong');
         veGiaoDien();
@@ -7272,7 +7309,8 @@ window.addEventListener('DOMContentLoaded', () => {
   apDungTheme(localStorage.getItem(THEME_KEY) || 'dark');
   taiCauHinhAI();
   if (!taiGame()) {
-    taoKiepMoi({});
+    state = null;
+    veGiaoDien();
     moModalKiepMoi();
   } else {
     veGiaoDien();
