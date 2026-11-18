@@ -470,6 +470,7 @@ function taoKiepMoi(opts = {}) {
 
     tuiDo: tuiDoKhoiDau,
     tuiDoMaxO: 10,
+    duocKhang: {},
     thuongThe: 0,
     danPhuongDaHoc: ['dp_hoang_long_dan', 'dp_kim_tuy_hoan'],
     vungHienTai: vungKhoiDau,
@@ -531,6 +532,7 @@ function taiGame() {
       if (!Array.isArray(state.biThuat)) state.biThuat = [];
       if (typeof state.dotPhaBuff !== 'number') state.dotPhaBuff = 0;
       if (typeof state.tuiDoMaxO !== 'number') state.tuiDoMaxO = 10;
+      if (!state.duocKhang || typeof state.duocKhang !== 'object') state.duocKhang = {};
       if (typeof state.thuongThe !== 'number' || state.thuongThe < 0) state.thuongThe = 0;
       if (typeof state.mp !== 'number' || Number.isNaN(state.mp)) state.mp = tinhMpMax();
       state.mp = Math.min(tinhMpMax(), Math.max(0, state.mp));
@@ -1084,11 +1086,25 @@ function moTaVatPhamNgan(vp, itemKey = null) {
     const hu = vp.hieuUng;
     if (hu.hp) parts.push(`❤️ Hồi +${Math.round(Number(hu.hp) * heSo).toLocaleString()} HP`);
     if (hu.tuVi) parts.push(`✨ +${Math.round(Number(hu.tuVi) * heSo).toLocaleString()} Tu vi`);
+    if (hu.canCot) parts.push(`💪 +${Math.max(1, Math.round(Number(hu.canCot) * heSo))} Căn cốt`);
     if (hu.bonusDotPha) {
       const bGoc = Number(hu.bonusDotPha) > 1 ? Number(hu.bonusDotPha) : Math.round(Number(hu.bonusDotPha) * 100);
       parts.push(`⚡ Đột phá +${Math.round(bGoc * heSo)}%`);
     }
     if (hu.thoNguyen) parts.push(`⏳ +${hu.thoNguyen} năm Thọ`);
+    if (state) {
+      const vpCg = Number(vp.canhGioi ?? 0);
+      if ((state.canhGioi || 0) < vpCg) {
+        parts.push(`🔒 Cần 【${layCanhGioiDef(vpCg).ten}】`);
+      } else if ((Number(hu.tuVi) || 0) > 0 || (Number(hu.canCot) || 0) > 0 || (Number(hu.thoNguyen) || 0) > 0) {
+        const dk = thongTinDuocKhangDan(vp);
+        parts.push(
+          dk.luotCon > 0
+            ? `Dược kháng ${dk.daDung}/${dk.luotToiDa} (thấm ${Math.round(dk.heSoTuVi * 100)}%)`
+            : `⛔ Đã kháng dược (${dk.daDung}/${dk.luotToiDa} lượt)`
+        );
+      }
+    }
   } else if (vp.loai === 'linh_thao') {
     parts.push(`🌱 Chín ${layBacLinhThao(vp).namChin} năm`);
   } else if (vp.loai === 'tru_vat' && vp.sucChua) {
@@ -1239,8 +1255,8 @@ function timDanDotPhaTrongTui() {
     const rawBonus = Number(vp.hieuUng?.bonusDotPha) || 0;
     if (rawBonus <= 0) continue;
     const bonus = rawBonus * layPhamChatVatPham(id).heSo;
-    // Hợp dùng cho đột phá từ cgHienTai -> cgHienTai + 1
-    if (vp.canhGioi === cgHienTai || vp.canhGioi === cgHienTai + 1) {
+    // Hợp dùng cho đột phá: không được dùng đan cao hơn cảnh giới hiện tại
+    if (vp.canhGioi <= cgHienTai && vp.canhGioi >= Math.max(0, cgHienTai - 1)) {
       if (!best || bonus > best.bonus) best = { vp, vpKey: id, bonus };
     }
   }
@@ -2280,6 +2296,65 @@ function luyenDan(dpId) {
 // 5. VẬT PHẨM, CÔNG PHÁP, BÍ THUẬT & PHƯỜNG THỊ
 // ==========================================
 
+// Cơ chế Đan dược & Dược kháng theo Vạn Kiếp Tu Tiên (Tác giả: Gemini (Antigravity))
+const DUOC_KHANG_LUOT_MOI_CANH = 4;
+
+function thongTinDuocKhangDan(vp) {
+  if (!vp) return { daDung: 0, luotToiDa: DUOC_KHANG_LUOT_MOI_CANH, luotCon: DUOC_KHANG_LUOT_MOI_CANH, heSoTuVi: 1, heSoThoNguyen: 1 };
+  const vpCg = Number(vp.canhGioi ?? 0);
+  const dkMap = (state && state.duocKhang) || {};
+  const rec = dkMap[vp.id];
+  const daDung = typeof rec === 'number' ? rec : rec?.daDung || 0;
+  const tuCg = rec && typeof rec.tuCg === 'number' ? rec.tuCg : Math.min(vpCg, state?.canhGioi || 0);
+  const luotToiDa = DUOC_KHANG_LUOT_MOI_CANH * Math.max(1, (state?.canhGioi || 0) - tuCg + 1);
+  const luotCon = Math.max(0, luotToiDa - daDung);
+  return {
+    daDung,
+    luotToiDa,
+    luotCon,
+    heSoTuVi: Math.pow(0.75, daDung),
+    heSoThoNguyen: Math.pow(0.8, daDung)
+  };
+}
+
+function ghiNhanDungDan(vp) {
+  if (!state || !vp) return;
+  if (!state.duocKhang || typeof state.duocKhang !== 'object') state.duocKhang = {};
+  const prev = state.duocKhang[vp.id];
+  const daDung = typeof prev === 'number' ? prev : prev?.daDung || 0;
+  const tuCg = prev && typeof prev.tuCg === 'number' ? prev.tuCg : Math.min(Number(vp.canhGioi ?? 0), state.canhGioi || 0);
+  state.duocKhang[vp.id] = { daDung: daDung + 1, tuCg };
+}
+
+function kiemTraDieuKienDungDan(vp, trongTran = false) {
+  if (!vp || vp.loai !== 'dan') return { ok: true, lyDo: '' };
+  const cgCur = Number(state?.canhGioi || 0);
+  const vpCg = Number(vp.canhGioi ?? 0);
+  if (cgCur < vpCg) {
+    return {
+      ok: false,
+      lyDo: `Cần 【${layCanhGioiDef(vpCg).ten}】 (cơ thể chưa chịu nổi dược lực ${layRankVatPham(vp)})`
+    };
+  }
+  const hu = vp.hieuUng || {};
+  const coTho = (Number(hu.thoNguyen) || 0) > 0;
+  const coDp = (Number(hu.bonusDotPha) || 0) > 0;
+  if (cgCur > vpCg + 2 && !coTho && !coDp) {
+    return { ok: false, lyDo: 'Đan lực quá yếu với tu vi hiện tại' };
+  }
+  if (!trongTran && ((Number(hu.tuVi) || 0) > 0 || (Number(hu.canCot) || 0) > 0 || coTho)) {
+    const dk = thongTinDuocKhangDan(vp);
+    const dangCanHoi = (Number(hu.hp) || 0) > 0 && (state.hp < tinhHpMax() || (state.thuongThe || 0) > 0);
+    if (dk.luotCon <= 0 && !dangCanHoi && !coDp) {
+      return {
+        ok: false,
+        lyDo: `Đã kháng dược (${dk.daDung}/${dk.luotToiDa} lượt); đột phá đại cảnh mới mở thêm lượt`
+      };
+    }
+  }
+  return { ok: true, lyDo: '' };
+}
+
 function dungVatPham(itemId) {
   if (soLuongVat(itemId) <= 0) return;
   const vp = layVatPhamDef(itemId);
@@ -2312,15 +2387,29 @@ function dungVatPham(itemId) {
   }
 
   if (vp.loai === 'dan' && vp.hieuUng) {
+    const checkDan = kiemTraDieuKienDungDan(vp, false);
+    if (!checkDan.ok) {
+      ghiNhatKy(`⚠️ Không thể phục dụng [${vp.ten}]: ${checkDan.lyDo}!`, 'canh_bao');
+      veGiaoDien();
+      return;
+    }
     const pc = layPhamChatVatPham(itemId);
     const heSo = pc.heSo || 1;
-    themVat(itemId, -1);
+    const dk = thongTinDuocKhangDan(vp);
+    const conLuotTham = dk.luotCon > 0;
     const hu = vp.hieuUng;
+    const coChiSoTuLuyen = (Number(hu.tuVi) || 0) > 0 || (Number(hu.canCot) || 0) > 0 || (Number(hu.thoNguyen) || 0) > 0;
+
+    themVat(itemId, -1);
     const msg = [];
     if (hu.tuVi) {
-      const tv = Math.max(1, Math.round(Number(hu.tuVi) * heSo));
-      state.tuVi += tv;
-      msg.push(`+${tv.toLocaleString()} Tu vi`);
+      const tv = conLuotTham ? Math.max(1, Math.round(Number(hu.tuVi) * heSo * dk.heSoTuVi)) : 0;
+      if (tv > 0) {
+        state.tuVi += tv;
+        msg.push(`+${tv.toLocaleString()} Tu vi${dk.daDung > 0 ? ` (kháng còn ${Math.round(dk.heSoTuVi * 100)}%)` : ''}`);
+      } else {
+        msg.push('+0 Tu vi (đã kháng dược)');
+      }
     }
     if (hu.hp) {
       const hp = Math.max(1, Math.round(Number(hu.hp) * heSo));
@@ -2336,12 +2425,21 @@ function dungVatPham(itemId) {
       }
     }
     if (hu.thoNguyen) {
-      state.thoNguyenBonus += Number(hu.thoNguyen);
-      msg.push(`+${hu.thoNguyen} năm Thọ nguyên`);
+      const rawTn = Number(hu.thoNguyen);
+      const tn = rawTn < 0 ? rawTn : conLuotTham ? Math.max(1, Math.round(rawTn * dk.heSoThoNguyen)) : 0;
+      if (tn !== 0) {
+        state.thoNguyenBonus += tn;
+        msg.push(`${tn > 0 ? '+' : ''}${tn} năm Thọ nguyên`);
+      } else {
+        msg.push('+0 năm Thọ nguyên (đã kháng dược)');
+      }
     }
     if (hu.canCot) {
-      state.chiSo.canCot += Number(hu.canCot);
-      msg.push(`+${hu.canCot} Căn cốt`);
+      const cc = conLuotTham ? Math.round(Number(hu.canCot) * dk.heSoTuVi) : 0;
+      if (cc > 0) {
+        state.chiSo.canCot += cc;
+        msg.push(`+${cc} Căn cốt`);
+      }
     }
     if (hu.bonusDotPha) {
       const bGoc = Number(hu.bonusDotPha) > 1 ? Number(hu.bonusDotPha) / 100 : Number(hu.bonusDotPha);
@@ -2349,6 +2447,7 @@ function dungVatPham(itemId) {
       state.dotPhaBuff = Math.max(state.dotPhaBuff || 0, b);
       msg.push(`+${Math.round(b * 100)}% tỷ lệ Đột phá đại cảnh tới`);
     }
+    if (coChiSoTuLuyen && conLuotTham) ghiNhanDungDan(vp);
     ghiNhatKy(`💊 Phục dụng [${vp.ten} · ${pc.ten}]: ${msg.join(', ') || 'Không có biến hóa rõ rệt'}.`, 'tot');
     luuGame();
     veGiaoDien();
@@ -5011,6 +5110,12 @@ function hanhDongChienDau(kieu) {
     const danId = kieu.slice(9);
     const vp = layVatPhamDef(danId);
     if (!vp || soLuongVat(danId) <= 0) return;
+    const checkDan = kiemTraDieuKienDungDan(vp, true);
+    if (!checkDan.ok) {
+      t.logTran.push(`⚠️ Không thể dùng [${vp.ten}]: ${checkDan.lyDo}!`);
+      veGiaoDien();
+      return;
+    }
     const pcDan = layPhamChatVatPham(danId);
     themVat(danId, -1);
     const hpBase = Math.max(tinhHpMax() * 0.22, (Number(vp.hieuUng?.hp) || 40) * pcDan.heSo);
@@ -5862,7 +5967,8 @@ function veCotGiua() {
     const danHoiEntry = Object.entries(state.tuiDo || {})
       .filter(([, sl]) => sl > 0)
       .map(([key]) => ({ key, vp: layVatPhamDef(key) }))
-      .find(x => x.vp && x.vp.loai === 'dan' && (Number(x.vp.hieuUng?.hp) > 0 || Number(x.vp.hieuUng?.tuVi) > 0));
+      .filter(x => x.vp && x.vp.loai === 'dan' && (Number(x.vp.hieuUng?.hp) > 0 || Number(x.vp.hieuUng?.tuVi) > 0) && kiemTraDieuKienDungDan(x.vp, true).ok)
+      .sort((a, b) => (b.vp.canhGioi ?? 0) - (a.vp.canhGioi ?? 0) || (Number(b.vp.hieuUng?.hp) || 0) - (Number(a.vp.hieuUng?.hp) || 0))[0];
     const danHoi = danHoiEntry ? { ...danHoiEntry.vp, key: danHoiEntry.key } : null;
 
     const phuChay = ['phu_truyen_tong', 'phu_nghi_binh'].find(id => soLuongVat(id) > 0);
@@ -6914,9 +7020,10 @@ function veCotPhai() {
                   const pc = layPhamChatVatPham(id);
                   const rankTen = layRankVatPham(vp);
                   const dangDeo = state.phapBao === id;
+                  const checkDan = vp.loai === 'dan' ? kiemTraDieuKienDungDan(vp, false) : { ok: true, lyDo: '' };
                   const actBtn =
                     vp.loai === 'dan'
-                      ? `<button class="btn btn-sm btn-primary" onclick="dungVatPham('${id}')">Phục dụng</button>`
+                      ? `<button class="btn btn-sm ${checkDan.ok ? 'btn-primary' : ''}" onclick="dungVatPham('${id}')" ${checkDan.ok ? '' : `disabled title="${escapeHtml(checkDan.lyDo)}"`}>${checkDan.ok ? 'Phục dụng' : `🔒 ${state.canhGioi < (vp.canhGioi ?? 0) ? `Cần ${layCanhGioiDef(vp.canhGioi ?? 0).ten}` : 'Kháng / Yếu'}`}</button>`
                       : vp.loai === 'phap_bao'
                       ? `<button class="btn btn-sm btn-primary" onclick="dungVatPham('${id}')">${dangDeo ? 'Tháo' : 'Trang bị'}</button>`
                       : '';
