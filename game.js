@@ -116,6 +116,41 @@ function suyDoanTinhCachNpc(text = '', danhHieu = '') {
   return pickRandom(NPC_TINH_CACH).id;
 }
 
+// Bảng chỉ số chuẩn cân bằng cho NPC / Yêu thú / Thủ vệ theo cảnh giới 0..10 (Tác giả: Gemini (Antigravity))
+const CHI_SO_CHUAN_CG = [
+  { hp: 230, congKich: 42, phongThu: 20 },
+  { hp: 820, congKich: 205, phongThu: 120 },
+  { hp: 2250, congKich: 520, phongThu: 360 },
+  { hp: 6800, congKich: 1850, phongThu: 1350 },
+  { hp: 24000, congKich: 5600, phongThu: 3800 },
+  { hp: 88000, congKich: 17500, phongThu: 11800 },
+  { hp: 310000, congKich: 55000, phongThu: 28000 },
+  { hp: 1050000, congKich: 172000, phongThu: 92000 },
+  { hp: 4500000, congKich: 580000, phongThu: 250000 },
+  { hp: 18500000, congKich: 1750000, phongThu: 760000 },
+  { hp: 45000000, congKich: 4200000, phongThu: 1850000 }
+];
+
+function heSoTieuCanhDich(cg, tieuCanh = null) {
+  if (typeof tieuCanh !== 'number') return 1;
+  const cgDef = layCanhGioiDef(Math.max(0, Math.min(10, Number(cg) || 0)));
+  const tieuMax = Math.max(0, (cgDef.tieuCanh || []).length - 1);
+  if (tieuMax <= 0) return 1;
+  const tc = Math.max(0, Math.min(tieuMax, tieuCanh));
+  return 0.85 + (tc / tieuMax) * 0.35;
+}
+
+function tinhChiSoDichChuan(cg, tieuCanh = null, hsHp = 1, hsAtk = 1, hsDef = 1) {
+  const c = Math.max(0, Math.min(10, Number(cg) || 0));
+  const base = CHI_SO_CHUAN_CG[c] || CHI_SO_CHUAN_CG[0];
+  const hsTieu = heSoTieuCanhDich(c, tieuCanh);
+  return {
+    hp: Math.max(20, Math.round(base.hp * hsTieu * hsHp)),
+    congKich: Math.max(5, Math.round(base.congKich * hsTieu * hsAtk)),
+    phongThu: Math.max(2, Math.round(base.phongThu * hsTieu * hsDef))
+  };
+}
+
 function khoiTaoHoSoNpc(baseNpc) {
   const cg = Math.max(0, Math.min(9, Number(baseNpc.canhGioi) || 0));
   const cgDef = layCanhGioiDef(cg);
@@ -145,6 +180,11 @@ function khoiTaoHoSoNpc(baseNpc) {
   const tmPool = (window.PN_DATA.tongMon || []).filter(t => t.vungId === baseNpc.vungId);
   const tmPick = baseNpc.tongMonId ? layTongMonDef(baseNpc.tongMonId) : (tmPool.length > 0 && Math.random() < 0.65 ? pickRandom(tmPool) : null);
   const tcLoai = baseNpc.tinhCachLoai || suyDoanTinhCachNpc(baseNpc.tinhCach, baseNpc.danhHieu);
+  const chuan = CHI_SO_CHUAN_CG[cg] || CHI_SO_CHUAN_CG[0];
+  const hsTieu = heSoTieuCanhDich(cg, tieuCanh);
+  const baseHp = Math.max(Number(baseNpc.hp) || 0, Math.round(chuan.hp * 0.85));
+  const baseAtk = Math.max(Number(baseNpc.congKich) || 0, Math.round(chuan.congKich * 0.85));
+  const baseDef = Math.max(Number(baseNpc.phongThu) || 0, Math.round(chuan.phongThu * 0.85));
 
   return {
     ...baseNpc,
@@ -162,9 +202,9 @@ function khoiTaoHoSoNpc(baseNpc) {
     haoCam: 0,
     haoCamRaw: 0,
     namTuongTacCuoi: 0,
-    hp: Math.round((baseNpc.hp || cgDef.hpGoc * 1.25) * tcNpc.heSoChienDau),
-    congKich: Math.round((baseNpc.congKich || cgDef.congKichGoc * 1.15) * tcNpc.heSoChienDau),
-    phongThu: Math.round((baseNpc.phongThu || cgDef.phongThuGoc * 1.15) * tcNpc.heSoChienDau),
+    hp: Math.round(baseHp * hsTieu * tcNpc.heSoChienDau),
+    congKich: Math.round(baseAtk * hsTieu * tcNpc.heSoChienDau),
+    phongThu: Math.round(baseDef * hsTieu * tcNpc.heSoChienDau),
     thuongThe: 0, // 0: Khỏe mạnh, 1: Nhẹ, 2: Ám tật/Nặng, 3: Nguy kịch
     tongMonId: tmPick ? tmPick.id : null,
     daoLuId: null,
@@ -187,6 +227,9 @@ function taoNpcNgauNhienTuMau(mau, vungOverride = null, idxSuffix = 1, cgOverrid
   const maxCg = cgOverride !== null ? cgOverride : Math.min(9, Math.max(minCg, mau.canhGioiMax ?? minCg + 1));
   const cg = minCg + Math.floor(Math.random() * (maxCg - minCg + 1));
   const cgDef = layCanhGioiDef(cg);
+  const tieuMax = Math.max(0, (cgDef.tieuCanh || []).length - 1);
+  const tieuCanh = Math.floor(Math.random() * (tieuMax + 1));
+  const chuan = CHI_SO_CHUAN_CG[cg] || CHI_SO_CHUAN_CG[0];
   const tmPool = (window.PN_DATA.tongMon || []).filter(t => t.vungId === vungId);
   const tmPick = tmPool.length > 0 && Math.random() < 0.6 ? pickRandom(tmPool) : null;
   const danhHieu = tmPick ? `${mau.goi} · ${tmPick.ten}` : `${mau.goi} (${mau.phe || 'Tán Tu'})`;
@@ -200,13 +243,14 @@ function taoNpcNgauNhienTuMau(mau, vungOverride = null, idxSuffix = 1, cgOverrid
     vungId,
     tongMonId: tmPick ? tmPick.id : null,
     canhGioi: cg,
+    tieuCanh,
     tinhCach: mau.tinhCach,
     tinhCachLoai: tcLoai,
     tuiDo: [...(mau.tuiDo || [])],
     linhThach: Math.round(40 * Math.pow(3, cg) * (0.7 + Math.random() * 0.6)),
-    hp: Math.round(cgDef.hpGoc * (1.15 + Math.random() * 0.4)),
-    congKich: Math.round(cgDef.congKichGoc * (1.05 + Math.random() * 0.3)),
-    phongThu: Math.round(cgDef.phongThuGoc * (1.05 + Math.random() * 0.3)),
+    hp: Math.round(chuan.hp * (0.9 + Math.random() * 0.2)),
+    congKich: Math.round(chuan.congKich * (0.9 + Math.random() * 0.2)),
+    phongThu: Math.round(chuan.phongThu * (0.9 + Math.random() * 0.2)),
     ngauNhien: true
   });
 }
@@ -543,7 +587,17 @@ function taiGame() {
       if (state.dongPhu && state.dongPhu.vungId === undefined) state.dongPhu.vungId = state.vungHienTai || 'kinh_chau';
       if (state.tongMon) chuanHoaTongMonState();
       for (const n of Object.values(state.npcs || {})) {
-        if (n && !n.tinhCachLoai) n.tinhCachLoai = suyDoanTinhCachNpc(n.tinhCach, n.danhHieu);
+        if (!n) continue;
+        if (!n.tinhCachLoai) n.tinhCachLoai = suyDoanTinhCachNpc(n.tinhCach, n.danhHieu);
+        // Nâng cấp chỉ số NPC từ save cũ nếu bị yếu hơn ngưỡng chuẩn cân bằng
+        const chuan = tinhChiSoDichChuan(n.canhGioi, n.tieuCanh || 0);
+        const hsTc = layTuChatNpc(n.tuChat).heSoChienDau || 1;
+        const sanHp = Math.round(chuan.hp * hsTc * 0.75);
+        const sanAtk = Math.round(chuan.congKich * hsTc * 0.7);
+        const sanDef = Math.round(chuan.phongThu * hsTc * 0.7);
+        if ((n.hp || 0) < sanHp) n.hp = Math.round(chuan.hp * hsTc);
+        if ((n.congKich || 0) < sanAtk) n.congKich = Math.round(chuan.congKich * hsTc);
+        if ((n.phongThu || 0) < sanDef) n.phongThu = Math.round(chuan.phongThu * hsTc);
       }
       return true;
     }
@@ -1590,8 +1644,14 @@ function chayVongDoiNpc(namBuoc) {
     if (npc.tuVi >= tieuCan && npc.thuongThe < 3) {
       const tieuMax = (cgDef.tieuCanh || []).length - 1;
       if ((npc.tieuCanh || 0) < tieuMax) {
+        const oldHs = heSoTieuCanhDich(npc.canhGioi, npc.tieuCanh || 0);
         npc.tuVi -= tieuCan;
         npc.tieuCanh = (npc.tieuCanh || 0) + 1;
+        const newHs = heSoTieuCanhDich(npc.canhGioi, npc.tieuCanh);
+        const ratio = newHs / Math.max(0.5, oldHs);
+        npc.hp = Math.round((npc.hp || 100) * ratio);
+        npc.congKich = Math.round((npc.congKich || 20) * ratio);
+        npc.phongThu = Math.round((npc.phongThu || 10) * ratio);
       } else if (npc.canhGioi < 9) {
         const tiLe = Math.min(0.85, (cgDef.tiLeDotPha || 0.25) + (lc.bonusDotPha || 0) + 0.15);
         if (Math.random() < tiLe) {
@@ -1599,10 +1659,11 @@ function chayVongDoiNpc(namBuoc) {
           npc.canhGioi += 1;
           npc.tieuCanh = 0;
           const moiDef = layCanhGioiDef(npc.canhGioi);
+          const csMoi = tinhChiSoDichChuan(npc.canhGioi, 0, tcNpc.heSoChienDau, tcNpc.heSoChienDau, tcNpc.heSoChienDau);
           npc.thoNguyen = Math.max(npc.thoNguyen, moiDef.thoNguyen);
-          npc.hp = Math.round(moiDef.hpGoc * 1.25 * tcNpc.heSoChienDau);
-          npc.congKich = Math.round(moiDef.congKichGoc * 1.15 * tcNpc.heSoChienDau);
-          npc.phongThu = Math.round(moiDef.phongThuGoc * 1.15 * tcNpc.heSoChienDau);
+          npc.hp = csMoi.hp;
+          npc.congKich = csMoi.congKich;
+          npc.phongThu = csMoi.phongThu;
           baoTinNpc(npc, `${npc.ten} bế quan khổ tu, thuận lợi đột phá lên 【${moiDef.ten}】!`, 'dai_cat');
         } else {
           npc.tuVi = Math.round(tieuCan * 0.6);
@@ -1772,13 +1833,13 @@ function kiemTraDotNhapDongPhu(soNam) {
   const ytPick = pickRandom(ytPool.length > 0 ? ytPool : window.PN_DATA.yeuThu || []);
 
   const tenKeThu = keThuNpc
-    ? `${keThuNpc.ten} (${layCanhGioiDef(keThuNpc.canhGioi).ten})`
+    ? `${keThuNpc.ten} (${tenCanhGioiDayDu(keThuNpc.canhGioi, keThuNpc.tieuCanh || 0)})`
     : ytPick
     ? `${ytPick.ten} (${layCanhGioiDef(ytPick.canhGioi).ten})`
     : `Tà tu lang thang (${layCanhGioiDef(ytCap).ten})`;
 
   if (oNha) {
-    const cgDef = layCanhGioiDef(ytCap);
+    const csDich = tinhChiSoDichChuan(ytCap);
     const enemy = keThuNpc
       ? {
           ten: tenKeThu,
@@ -1787,7 +1848,8 @@ function kiemTraDotNhapDongPhu(soNam) {
           phongThu: keThuNpc.phongThu,
           linhThach: keThuNpc.linhThach,
           npcId: keThuNpc.id,
-          canhGioiDich: keThuNpc.canhGioi
+          canhGioiDich: keThuNpc.canhGioi,
+          tieuCanhDich: keThuNpc.tieuCanh || 0
         }
       : ytPick
       ? {
@@ -1801,9 +1863,9 @@ function kiemTraDotNhapDongPhu(soNam) {
         }
       : {
           ten: tenKeThu,
-          hp: cgDef.hpGoc,
-          congKich: cgDef.congKichGoc,
-          phongThu: cgDef.phongThuGoc,
+          hp: csDich.hp,
+          congKich: csDich.congKich,
+          phongThu: csDich.phongThu,
           linhThach: Math.round(25 * Math.pow(2.5, ytCap)),
           canhGioiDich: ytCap
         };
@@ -1896,13 +1958,14 @@ function kiemTraSuKienTruySat(epBuoc = false) {
           effects: [
             {
               combat: {
-                ten: `${keThu.ten} (${layCanhGioiDef(keThu.canhGioi).ten})`,
+                ten: `${keThu.ten} (${tenCanhGioiDayDu(keThu.canhGioi, keThu.tieuCanh || 0)})`,
                 hp: keThu.hp,
                 congKich: keThu.congKich,
                 phongThu: keThu.phongThu,
                 linhThach: keThu.linhThach,
                 npcId: keThu.id,
                 canhGioiDich: keThu.canhGioi,
+                tieuCanhDich: keThu.tieuCanh || 0,
                 giuNguyenChiSo: true
               },
               log: `⚔️ Bạn nghênh chiến cuộc truy sát của [${keThu.ten}]!`
@@ -1927,13 +1990,14 @@ function kiemTraSuKienTruySat(epBuoc = false) {
             {
               hp: -25,
               combat: {
-                ten: `${keThu.ten} (${layCanhGioiDef(keThu.canhGioi).ten})`,
+                ten: `${keThu.ten} (${tenCanhGioiDayDu(keThu.canhGioi, keThu.tieuCanh || 0)})`,
                 hp: keThu.hp,
                 congKich: keThu.congKich,
                 phongThu: keThu.phongThu,
                 linhThach: keThu.linhThach,
                 npcId: keThu.id,
                 canhGioiDich: keThu.canhGioi,
+                tieuCanhDich: keThu.tieuCanh || 0,
                 giuNguyenChiSo: true
               },
               log: `💥 Thoát thân thất bại! [${keThu.ten}] áp sát ép bạn phải tử chiến!`
@@ -1952,11 +2016,12 @@ function kiemTraSuKienTruySat(epBuoc = false) {
   const cgChapSu = Math.min(tm?.canhGioiCaoNhat || 9, state.canhGioi + (Math.random() < 0.35 ? 1 : 0));
   const cgDef = layCanhGioiDef(cgChapSu);
   const phiChuoc = Math.max(120, Math.round(140 * Math.pow(2.3, state.canhGioi)));
+  const csChapSu = tinhChiSoDichChuan(cgChapSu, null, 1.25, 1.12, 1.08);
   const chapSu = {
     ten: `Chấp Sự Chấp Pháp Đường · ${tm ? tm.ten : tmId} (${cgDef.ten})`,
-    hp: Math.round(cgDef.hpGoc * 1.35),
-    congKich: Math.round(cgDef.congKichGoc * 1.2),
-    phongThu: Math.round(cgDef.phongThuGoc * 1.15),
+    hp: csChapSu.hp,
+    congKich: csChapSu.congKich,
+    phongThu: csChapSu.phongThu,
     linhThach: Math.round(80 * Math.pow(2.5, cgChapSu)),
     canhGioiDich: cgChapSu,
     giuNguyenChiSo: true
@@ -3257,9 +3322,7 @@ function lamViecThuongTrucTongMon(loai) {
               {
                 combat: {
                   ten: `Kẻ Trộm Linh Điền (${cgDef.ten})`,
-                  hp: Math.round(cgDef.hpGoc * 1.05),
-                  congKich: Math.round(cgDef.congKichGoc * 1.0),
-                  phongThu: cgDef.phongThuGoc,
+                  ...tinhChiSoDichChuan(cgDich, null, 1.02, 0.96, 0.95),
                   linhThach: Math.round(45 * Math.pow(2.2, cgDich)),
                   canhGioiDich: cgDich,
                   giuNguyenChiSo: true,
@@ -3427,13 +3490,13 @@ function thucHienNhiemVuTongMon(nvId) {
     if (state.ketThuc) { luuGame(); veGiaoDien(); return; }
   }
 
-  const cgDef = layCanhGioiDef(Math.min(9, nv.canhGioiDich));
-  const heSoDich = nv.laTinhAnh ? 1.4 : 1.12;
+  const cgDichThuc = Math.min(9, nv.canhGioiDich);
+  const csNv = tinhChiSoDichChuan(cgDichThuc, null, nv.laTinhAnh ? 1.28 : 1.02, nv.laTinhAnh ? 1.15 : 0.98, nv.laTinhAnh ? 1.12 : 0.96);
   const combatBase = {
     ten: nv.tenDich,
-    hp: Math.round(cgDef.hpGoc * heSoDich),
-    congKich: Math.round(cgDef.congKichGoc * (nv.laTinhAnh ? 1.2 : 1.02)),
-    phongThu: Math.round(cgDef.phongThuGoc * (nv.laTinhAnh ? 1.15 : 1.0)),
+    hp: csNv.hp,
+    congKich: csNv.congKich,
+    phongThu: csNv.phongThu,
     linhThach: Math.round(40 * Math.pow(2.2, nv.canhGioiDich)),
     canhGioiDich: nv.canhGioiDich,
     giuNguyenChiSo: true,
@@ -3572,9 +3635,7 @@ function thangCapTongMon() {
           {
             combat: {
               ten: `Giám Khảo Lôi Đài (${cgDef.ten})`,
-              hp: Math.round(cgDef.hpGoc * (1.1 + nextIdx * 0.08)),
-              congKich: Math.round(cgDef.congKichGoc * (1.02 + nextIdx * 0.04)),
-              phongThu: cgDef.phongThuGoc,
+              ...tinhChiSoDichChuan(cgThi, null, 1.04 + nextIdx * 0.06, 0.98 + nextIdx * 0.04, 0.98 + nextIdx * 0.03),
               linhThach: Math.round(30 * Math.pow(2.0, cgThi)),
               canhGioiDich: cgThi,
               giuNguyenChiSo: true,
@@ -4217,9 +4278,7 @@ function sinhSuKienBiCanh() {
           }
         : {
             ten: `Thủ Vệ Cổ Trận (${cdef.ten})`,
-            hp: Math.round(cdef.hpGoc * 1.3),
-            congKich: Math.round(cdef.congKichGoc * 1.1),
-            phongThu: cdef.phongThuGoc,
+            ...tinhChiSoDichChuan(cgBoss, null, 1.25, 1.12, 1.08),
             linhThach: Math.round(140 * Math.pow(2.5, cgBoss)),
             canhGioiDich: cgBoss
           },
@@ -4474,13 +4533,14 @@ function hanhDongBiCanh(idx) {
       thayDoiHaoCam(npc, -25, true);
       ghiKyUcNpc(npc, `Bị ${state.ten} đánh úp tranh bảo trong ${bc.ten}!`);
       batDauChienDau({
-        ten: `${npc.ten} (${layCanhGioiDef(npc.canhGioi).ten})`,
+        ten: `${npc.ten} (${tenCanhGioiDayDu(npc.canhGioi, npc.tieuCanh || 0)})`,
         hp: npc.hp,
         congKich: npc.congKich,
         phongThu: npc.phongThu,
         linhThach: npc.linhThach,
         npcId: npc.id,
         canhGioiDich: npc.canhGioi,
+        tieuCanhDich: npc.tieuCanh || 0,
         tuBiCanh: true
       });
       return;
@@ -4612,7 +4672,7 @@ function sanYeuThuVung() {
 
   // Điều chỉnh sức mạnh yêu thú mượt theo tiểu cảnh giới hiện tại của người chơi
   const tieuLen = Math.max(1, (layCanhGioiDef().tieuCanh || []).length);
-  const heSoTieu = yt.canhGioi === state.canhGioi ? 0.72 + (state.tieuCanh / tieuLen) * 0.55 : 1.0;
+  const heSoTieu = yt.canhGioi === state.canhGioi ? 0.8 + (state.tieuCanh / Math.max(1, tieuLen - 1 || 1)) * 0.42 : 1.0;
   const lootId = pickRandom(yt.roiDo || []);
   batDauChienDau({
     ten: `${yt.ten} (${layCanhGioiDef(yt.canhGioi).ten})`,
@@ -4738,12 +4798,11 @@ function kiemTraNoNhanQua(epChay = false) {
           effects: [
             {
               combat: {
-                ten: `Tầm Cừu Giả · ${tenDt}`,
-                hp: Math.round(cgDef.hpGoc * 1.15),
-                congKich: Math.round(cgDef.congKichGoc * 1.1),
-                phongThu: cgDef.phongThuGoc,
+                ten: `Tầm Cừu Giả · ${tenDt}${npc && npc.conSong ? ` (${tenCanhGioiDayDu(npc.canhGioi, npc.tieuCanh || 0)})` : ` (${cgDef.ten})`}`,
+                ...(npc && npc.conSong
+                  ? { hp: npc.hp, congKich: npc.congKich, phongThu: npc.phongThu, canhGioiDich: npc.canhGioi, tieuCanhDich: npc.tieuCanh || 0 }
+                  : { ...tinhChiSoDichChuan(cgDich, null, 1.1, 1.05, 1.0), canhGioiDich: cgDich }),
                 linhThach: ltThuong,
-                canhGioiDich: cgDich,
                 giuNguyenChiSo: true,
                 npcId: npc && npc.conSong ? npc.id : null
               }
@@ -4776,10 +4835,8 @@ function kiemTraNoNhanQua(epChay = false) {
           effects: [
             {
               combat: {
-                ten: `Chấp Pháp Đệ Tử · ${tenDt}`,
-                hp: Math.round(cgDef.hpGoc * 1.25),
-                congKich: Math.round(cgDef.congKichGoc * 1.15),
-                phongThu: Math.round(cgDef.phongThuGoc * 1.1),
+                ten: `Chấp Pháp Đệ Tử · ${tenDt} (${cgDef.ten})`,
+                ...tinhChiSoDichChuan(cgDich, null, 1.18, 1.1, 1.05),
                 linhThach: Math.round(ltThuong * 1.1),
                 canhGioiDich: cgDich,
                 giuNguyenChiSo: true
@@ -4872,9 +4929,7 @@ function kiemTraBienCoHanhDong(loaiBienCo) {
               {
                 combat: {
                   ten: `Đầu Lĩnh Kiếp Tu (${cdef.ten})`,
-                  hp: Math.round(cdef.hpGoc * 1.05),
-                  congKich: Math.round(cdef.congKichGoc * 0.95),
-                  phongThu: Math.round(cdef.phongThuGoc * 0.9),
+                  ...tinhChiSoDichChuan(cg, null, 1.02, 0.95, 0.92),
                   linhThach: Math.round(ltChuan * 1.6),
                   canhGioiDich: cg,
                   giuNguyenChiSo: true
@@ -4937,9 +4992,7 @@ function kiemTraBienCoHanhDong(loaiBienCo) {
               {
                 combat: {
                   ten: `Yêu Thú Quấy Nhiễu (${cdef.ten})`,
-                  hp: Math.round(cdef.hpGoc * 1.1),
-                  congKich: cdef.congKichGoc,
-                  phongThu: cdef.phongThuGoc,
+                  ...tinhChiSoDichChuan(cg, null, 1.06, 0.98, 0.95),
                   linhThach: ltChuan,
                   canhGioiDich: cg,
                   giuNguyenChiSo: true
@@ -5315,18 +5368,27 @@ function capNhatThuongTheSauTran(tenDich) {
 }
 
 function batDauChienDau(dich) {
-  const cdef = layCanhGioiDef();
-  const hpDich = dich.hp || Math.round(cdef.hpGoc * 1.4);
+  const csMacDinh = tinhChiSoDichChuan(state.canhGioi, null, 1.2, 1.1, 1.05);
+  const hpDich = dich.hp || csMacDinh.hp;
+  const npcObj = dich.npcId && state.npcs ? state.npcs[dich.npcId] : null;
+  const cgDich = suyDoanCanhGioiDich(dich);
+  const tieuCanhDich =
+    typeof dich.tieuCanhDich === 'number' ? dich.tieuCanhDich : npcObj ? npcObj.tieuCanh || 0 : null;
+  const tenDich =
+    npcObj && (!dich.ten || dich.ten === `${npcObj.ten} (${layCanhGioiDef(npcObj.canhGioi).ten})`)
+      ? `${npcObj.ten} (${tenCanhGioiDayDu(npcObj.canhGioi, npcObj.tieuCanh || 0)})`
+      : dich.ten || 'Tu Sĩ Bí Ẩn';
   state.tranHienTai = {
-    ten: dich.ten || 'Tu Sĩ Bí Ẩn',
+    ten: tenDich,
     hpDich,
     hpDichMax: hpDich,
-    congKich: dich.congKich || Math.round(cdef.congKichGoc * 1.25),
-    phongThu: dich.phongThu || Math.round(cdef.phongThuGoc * 1.15),
+    congKich: dich.congKich || csMacDinh.congKich,
+    phongThu: dich.phongThu || csMacDinh.phongThu,
     linhThach: dich.linhThach || Math.round(45 * Math.pow(2.5, state.canhGioi)),
     loot: dich.loot || null,
     npcId: dich.npcId || null,
-    canhGioiDich: suyDoanCanhGioiDich(dich),
+    canhGioiDich: cgDich,
+    tieuCanhDich,
     tuBiCanh: !!dich.tuBiCanh,
     laBossBiCanh: !!dich.laBossBiCanh,
     tongMonQuestId: dich.tongMonQuestId || null,
@@ -5341,7 +5403,7 @@ function batDauChienDau(dich) {
     giamSatThuong: 0,
     choangDich: 0,
     buffAtk: 0,
-    logTran: [`⚔️ Chạm trán 【${dich.ten}】 (Khí huyết: ${hpDich.toLocaleString()})!`]
+    logTran: [`⚔️ Chạm trán 【${tenDich}】 (Khí huyết: ${hpDich.toLocaleString()})!`]
   };
   veGiaoDien();
 }
@@ -6048,13 +6110,14 @@ function danhCuopNpc(npcId) {
   ghiKyUcNpc(npc, `Bị ${state.ten} đánh úp mưu đoạt túi trữ vật!`);
   ghiNhatKy(`🗡️ Bạn bất ngờ đánh úp [${npc.ten}] để đoạt túi trữ vật!`, 'nguy_hiem');
   batDauChienDau({
-    ten: `${npc.ten} (${layCanhGioiDef(npc.canhGioi).ten})`,
+    ten: `${npc.ten} (${tenCanhGioiDayDu(npc.canhGioi, npc.tieuCanh || 0)})`,
     hp: npc.hp,
     congKich: npc.congKich,
     phongThu: npc.phongThu,
     linhThach: npc.linhThach,
     npcId: npc.id,
-    canhGioiDich: npc.canhGioi
+    canhGioiDich: npc.canhGioi,
+    tieuCanhDich: npc.tieuCanh || 0
   });
 }
 
@@ -6355,9 +6418,22 @@ function veCotGiua() {
     if ((t.buffNeLuot || 0) > 0) buffTaParts.push(`💨 Độ̣n ảnh +Né (${t.buffNeLuot}h)`);
     if (ttTaTxt) buffTaParts.push(ttTaTxt);
 
+    const npcCombat = t.npcId && state.npcs ? state.npcs[t.npcId] : null;
+    const cgDich = typeof t.canhGioiDich === 'number' ? t.canhGioiDich : suyDoanCanhGioiDich(t);
+    const canhGioiDichHienThi = npcCombat
+      ? tenCanhGioiDayDu(npcCombat.canhGioi, npcCombat.tieuCanh || 0)
+      : typeof t.tieuCanhDich === 'number'
+      ? tenCanhGioiDayDu(cgDich, t.tieuCanhDich)
+      : layCanhGioiDef(cgDich).ten;
+    const tenDichHienThi =
+      npcCombat && t.ten === `${npcCombat.ten} (${layCanhGioiDef(npcCombat.canhGioi).ten})`
+        ? `${npcCombat.ten} (${canhGioiDichHienThi})`
+        : t.ten;
+
     elInteraction.innerHTML = `
       <div class="event-box combat-box">
-        <div class="event-title">⚔️ ĐẤU PHÁP: ${escapeHtml(t.ten)} (Hiệp ${t.hiep})</div>
+        <div class="event-title">⚔️ ĐẤU PHÁP: ${escapeHtml(tenDichHienThi)} (Hiệp ${t.hiep})</div>
+        <div class="muted" style="margin:-2px 0 6px">Cảnh giới đối thủ: <b class="hl-realm">${escapeHtml(canhGioiDichHienThi)}</b>${npcCombat ? ` · Tư chất: <b>${escapeHtml(layTuChatNpc(npcCombat.tuChat).ten)}</b>` : ''}</div>
         <div class="stat-row"><span>Khí huyết địch:</span> <b class="hl-danger">${t.hpDich.toLocaleString()} / ${t.hpDichMax.toLocaleString()}</b> <span class="muted">(Công ${t.congKich.toLocaleString()} · Thủ ${t.phongThu.toLocaleString()})</span></div>
         ${ttDichTxt ? `<div class="muted" style="margin:-2px 0 4px">Trạng thái địch: <b class="hl-danger">${escapeHtml(ttDichTxt)}</b></div>` : ''}
         <div class="stat-row"><span>Khí huyết / Linh lực:</span> <span><b class="hl-green">${state.hp.toLocaleString()}/${tinhHpMax().toLocaleString()} HP</b> · <b class="hl-realm">${mpCur.toLocaleString()}/${mpMax.toLocaleString()} LL</b></span> <span class="muted">(Công ${tinhCongKich().toLocaleString()} · Thủ ${tinhPhongThu().toLocaleString()})</span></div>
