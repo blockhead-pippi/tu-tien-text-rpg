@@ -1,9 +1,6 @@
-# CHANGELOG — PHÀM NHÂN TU TIÊN: SANDBOX BIÊN NIÊN
+# CHANGELOG:
 
-## v1.1.0 — "QoL + Tempo + Discoverability" (bản cập nhật này)
-
-Bản cập nhật tập trung vào 3 việc: **làm rõ thông tin**, **giảm mỏi tay**, và **giúp người chơi tìm ra các hệ thống đã có sẵn** trong game.
-Không thay đổi cấu trúc save cũ (save v2 vẫn đọc được).
+## v1.1.0 — "QoL + Tempo + Discoverability"
 
 ### 1) Sửa lỗi & trải nghiệm (QoL)
 - **Favicon**: thêm icon SVG inline → hết lỗi console `favicon.ico 404`.
