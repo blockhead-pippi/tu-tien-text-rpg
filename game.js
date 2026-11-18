@@ -2077,13 +2077,41 @@ function dotPha() {
       };
     }
   } else {
-    const tonThatTuVi = Math.round(can * 0.30);
-    state.tuVi = Math.max(0, state.tuVi - tonThatTuVi);
-    state.hp = Math.max(10, Math.round(state.hp * 0.45));
-    state.mp = Math.max(0, Math.round((state.mp ?? tinhMpMax()) * 0.4));
-    state.thuongThe = Math.min(3, (state.thuongThe || 0) + 1);
+    const tuViTruoc = state.tuVi || 0;
+    const tenCanhCu = tenCanhGioiDayDu();
+    const rollPhanPhe = Math.random();
+    const nangPct = state.canhGioi >= 2 ? 0.25 : 0.15;
+    const laTauHoaNang = state.tieuCanh > 0 && rollPhanPhe < nangPct;
+
+    let tutMsg = '';
+    let tonCanCot = 0;
+
+    if (state.tieuCanh > 0) {
+      // Đột phá thất bại: tụt 1 tiểu cảnh giới và trừ nặng Tu vi + kinh nghiệm cảnh giới (theo VKTT)
+      state.tieuCanh -= 1;
+      const canSauTut = tinhTuViCan();
+      state.tuVi = laTauHoaNang ? 0 : Math.round(canSauTut * (0.35 + Math.random() * 0.2));
+      tutMsg = `, cảnh giới tụt từ 【${tenCanhCu}】 về 【${tenCanhGioiDayDu()}】 (${state.tuVi.toLocaleString()}/${canSauTut.toLocaleString()} TV)`;
+      state.hp = Math.max(10, Math.round(state.hp * (laTauHoaNang ? 0.25 : 0.45)));
+      state.mp = Math.max(0, Math.round((state.mp ?? tinhMpMax()) * (laTauHoaNang ? 0.15 : 0.35)));
+      const themThuong = laTauHoaNang && state.canhGioi >= 3 ? 2 : 1;
+      state.thuongThe = Math.min(3, (state.thuongThe || 0) + themThuong);
+
+      if (laTauHoaNang && state.canhGioi >= 3 && (state.chiSo.canCot || 0) > 6) {
+        tonCanCot = state.canhGioi >= 5 ? 2 : 1;
+        state.chiSo.canCot = Math.max(5, state.chiSo.canCot - tonCanCot);
+      }
+    } else {
+      // Phàm Nhân chưa có tiểu cảnh: trừ 65-75% tu vi và kẹp <= 55% mốc đột phá để không spam lại ngay
+      state.tuVi = Math.min(Math.round(can * 0.55), Math.round(tuViTruoc * (0.25 + Math.random() * 0.1)));
+      state.hp = Math.max(10, Math.round(state.hp * 0.5));
+      state.mp = Math.max(0, Math.round((state.mp ?? tinhMpMax()) * 0.4));
+      state.thuongThe = Math.min(3, (state.thuongThe || 0) + 1);
+    }
+
+    const tuViMat = Math.max(0, tuViTruoc - state.tuVi);
     ghiNhatKy(
-      `💥 Xung kích đại cảnh giới thất bại${tenDanDung} (Tỷ lệ ${Math.round(tiLe * 100)}%)! Hao tổn ${tonThatTuVi.toLocaleString()} Tu vi và rơi vào 【${layThuongTheDef().ten}】.`,
+      `💥 ${laTauHoaNang ? 'Tẩu hỏa nhập ma! ' : ''}Xung kích đại cảnh giới thất bại${tenDanDung} (Tỷ lệ ${Math.round(tiLe * 100)}%)! Tiêu tán ${tuViMat.toLocaleString()} Tu vi${tutMsg}${tonCanCot > 0 ? `, căn cơ tổn hại -${tonCanCot} Căn cốt` : ''}, rơi vào 【${layThuongTheDef().ten}】.`,
       'nguy_hiem'
     );
   }
