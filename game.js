@@ -23,6 +23,7 @@ const uiFilter = {
   npcScope: 'ban_be', // 'ban_be' | 'ke_thu' | 'the_luc' | 'all'
   tmQuery: '',
   tmScope: 'vung', // 'vung' | 'all'
+  tmSubTab: 'nhiem_vu', // 'nhiem_vu' | 'chap_su' | 'bao_kho'
   nhaQuery: '',
   mapQuery: '',
   bagQuery: ''
@@ -421,7 +422,17 @@ function taoKiepMoi(opts = {}) {
         id: xtDef.tongMon.id,
         capBac: xtDef.tongMon.capBac || 0,
         congHien: xtDef.tongMon.congHien || 30,
-        namBongLoc: 0
+        congTich: xtDef.tongMon.congHien || 30,
+        namBongLoc: 0,
+        namKhaoHachLai: 0,
+        namQuyen: 0,
+        ltDaQuyenNam: 0,
+        donKy: -1,
+        donDaGiao: false,
+        bangKy: -1,
+        bangViec: [],
+        viecNhan: [],
+        viecVatNhan: {}
       }
     : null;
   const theLucKhoiDau = { ...(xtDef.theLucHaoCam || {}) };
@@ -535,6 +546,7 @@ function taiGame() {
       if (!('biCanhHienTai' in state)) state.biCanhHienTai = null;
       if (!('hauChienNpc' in state)) state.hauChienNpc = null;
       if (state.dongPhu && state.dongPhu.vungId === undefined) state.dongPhu.vungId = state.vungHienTai || 'kinh_chau';
+      if (state.tongMon) chuanHoaTongMonState();
       for (const n of Object.values(state.npcs || {})) {
         if (n && !n.tinhCachLoai) n.tinhCachLoai = suyDoanTinhCachNpc(n.tinhCach, n.danhHieu);
       }
@@ -1939,6 +1951,7 @@ function tienThoiGian(soThang) {
     }
 
     kiemTraDotNhapDongPhu(namTroi);
+    kiemTraQuaHanNhiemVuTongMon();
   }
 
   if (!kiemTraSuKienTruySat(false)) {
@@ -2510,16 +2523,47 @@ function trangBiCongPhapHoacBiThuat(cid) {
 }
 
 // ==========================================
-// 6. HỆ THỐNG TÔNG MÔN (60 TÔNG MÔN)
+// 6. HỆ THỐNG TÔNG MÔN & NHIỆM VỤ TÔNG MÔN (Áp dụng cơ chế VKTT)
+// Tác giả: Gemini (Antigravity)
 // ==========================================
 
 const TONG_MON_CHUC_VI = [
-  { ten: 'Đệ Tử Ký Danh', yeuCauCongHien: 0, yeuCauCg: 0, bongLoc: 35 },
-  { ten: 'Đệ Tử Ngoại Môn', yeuCauCongHien: 100, yeuCauCg: 1, bongLoc: 120 },
-  { ten: 'Đệ Tử Nội Môn', yeuCauCongHien: 350, yeuCauCg: 2, bongLoc: 480 },
-  { ten: 'Đệ Tử Chân Truyền', yeuCauCongHien: 900, yeuCauCg: 3, bongLoc: 1800 },
-  { ten: 'Trưởng Lão Tông Môn', yeuCauCongHien: 2200, yeuCauCg: 4, bongLoc: 6500 }
+  { ten: 'Đệ Tử Ký Danh', yeuCauCongHien: 0, yeuCauCg: 0, bongLoc: 35, bongCh: 4, tichToiDaNam: 2, linhMachHeSo: 0, phiLinhMachNam: 0, giamGiaBaoKho: 1.0 },
+  { ten: 'Đệ Tử Ngoại Môn', yeuCauCongHien: 100, yeuCauCg: 1, bongLoc: 120, bongCh: 8, tichToiDaNam: 5, linhMachHeSo: 0.25, phiLinhMachNam: 18, giamGiaBaoKho: 1.0 },
+  { ten: 'Đệ Tử Nội Môn', yeuCauCongHien: 350, yeuCauCg: 2, bongLoc: 480, bongCh: 15, tichToiDaNam: 10, linhMachHeSo: 0.45, phiLinhMachNam: 24, giamGiaBaoKho: 0.9 },
+  { ten: 'Đệ Tử Chân Truyền', yeuCauCongHien: 900, yeuCauCg: 3, bongLoc: 1800, bongCh: 25, tichToiDaNam: 15, linhMachHeSo: 0.7, phiLinhMachNam: 32, giamGiaBaoKho: 0.8 },
+  { ten: 'Trưởng Lão Tông Môn', yeuCauCongHien: 2200, yeuCauCg: 4, bongLoc: 6500, bongCh: 40, tichToiDaNam: 25, linhMachHeSo: 1.0, phiLinhMachNam: 42, giamGiaBaoKho: 0.7 }
 ];
+
+const TONG_MON_KY_NAM = 3;
+const MAX_NHIEM_VU_TONG_MON = 3;
+
+function chuanHoaTongMonState() {
+  if (!state || !state.tongMon) return null;
+  const tm = state.tongMon;
+  if (typeof tm.congHien !== 'number' || Number.isNaN(tm.congHien)) tm.congHien = 0;
+  if (typeof tm.congTich !== 'number' || Number.isNaN(tm.congTich)) tm.congTich = tm.congHien;
+  if (typeof tm.namBongLoc !== 'number') tm.namBongLoc = Math.max(0, (state.nam || 1) - 1);
+  if (typeof tm.namKhaoHachLai !== 'number') tm.namKhaoHachLai = 0;
+  if (typeof tm.namQuyen !== 'number') tm.namQuyen = 0;
+  if (typeof tm.ltDaQuyenNam !== 'number') tm.ltDaQuyenNam = 0;
+  if (typeof tm.donKy !== 'number') tm.donKy = -1;
+  if (typeof tm.donDaGiao !== 'boolean') tm.donDaGiao = false;
+  if (typeof tm.bangKy !== 'number') tm.bangKy = -1;
+  if (!Array.isArray(tm.bangViec)) tm.bangViec = [];
+  if (!Array.isArray(tm.viecNhan)) tm.viecNhan = [];
+  if (!tm.viecVatNhan || typeof tm.viecVatNhan !== 'object') tm.viecVatNhan = {};
+  return tm;
+}
+
+function thayDoiCongHienTongMon(delta) {
+  const tm = chuanHoaTongMonState();
+  if (!tm || !delta) return 0;
+  const val = Math.round(Number(delta) || 0);
+  tm.congHien = Math.max(0, tm.congHien + val);
+  if (val > 0) tm.congTich = Math.max(tm.congHien, (tm.congTich || 0) + val);
+  return tm.congHien;
+}
 
 function layHaoCamTheLuc(tmId) {
   if (!state || !tmId) return 0;
@@ -2570,6 +2614,242 @@ function tangQuaTheLuc(tmId) {
   veGiaoDien();
 }
 
+function laTongMonTaDao(tmDef) {
+  const phe = String(tmDef?.phe || '').toLowerCase();
+  return phe.includes('ma') || phe.includes('quỷ') || phe.includes('yêu') || phe.includes('trùng');
+}
+
+function timDongMinhTongMon() {
+  if (!state || !state.npcs || !state.tongMon) return null;
+  const tmId = state.tongMon.id;
+  const candidates = Object.values(state.npcs).filter(
+    n =>
+      n &&
+      n.conSong &&
+      ((n.tongMonId === tmId && (n.haoCam || 0) >= 15) || n.laDaoLu || (n.haoCam || 0) >= 50)
+  );
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => (b.tongMonId === tmId ? 15 : 0) + (b.haoCam || 0) - ((a.tongMonId === tmId ? 15 : 0) + (a.haoCam || 0)));
+  return candidates[0];
+}
+
+function chonVungNhiemVuTongMon(tmDef) {
+  const ds = (window.PN_DATA.vungDat || []).filter(v => (v.canhGioiYeuCau || 0) <= (state.canhGioi || 0));
+  if (tmDef?.vungId && (layVungDef(tmDef.vungId).canhGioiYeuCau || 0) <= (state.canhGioi || 0) && Math.random() < 0.45) {
+    return layVungDef(tmDef.vungId);
+  }
+  return pickRandom(ds.length > 0 ? ds : window.PN_DATA.vungDat) || layVungDef();
+}
+
+const TONG_MON_NV_MAU = [
+  {
+    loai: 'tru_yeu_ho_son',
+    tieuDe: v => `Trừ ${v.yeuThu} quấy nhiễu dưới chân núi`,
+    moTa: v => `Dân dưới chân núi gửi thư cầu cứu tới sơn môn: 【${v.yeuThu}】 đêm nào cũng mò xuống phá hoại. Dấu vết dẫn thẳng tới 【${v.vungTen}】.`,
+    coDongMinh: true,
+    chBase: 26,
+    ltMult: 0.95,
+    han: 3,
+    kieuDich: 'yeu_thu'
+  },
+  {
+    loai: 'yeu_duoc_vien',
+    tieuDe: v => `Diệt ${v.yeuThu} phá hoại dược viên`,
+    moTa: v => `Mấy luống linh thảo ngoài rìa 【${v.vungTen}】 bị đào bới tan hoang. Chấp sự sư thúc bảo đêm nay con 【${v.yeuThu}】 ăn quen mùi chắc chắn sẽ quay lại.`,
+    coDongMinh: true,
+    chBase: 24,
+    ltMult: 0.9,
+    han: 3,
+    kieuDich: 'yeu_thu'
+  },
+  {
+    loai: 'thuy_yeu_dam',
+    tieuDe: v => `Trừ ${v.yeuThu} dưới đầm ${v.vungTen}`,
+    moTa: v => `Đầm nước nơi tông môn lấy linh thủy tại 【${v.vungTen}】 đột nhiên vẩn đục mùi tanh, một con 【${v.yeuThu}】 ẩn mình dưới đáy đầm liên tục tập kích đệ tử.`,
+    coDongMinh: true,
+    coDanhUp: { chiSo: 'thanThuc', doKho: 15, nhan: 'Lặn xuống đánh úp vào huyệt yếu (-25% HP địch)' },
+    chBase: 28,
+    ltMult: 1.0,
+    han: 3,
+    kieuDich: 'yeu_thu'
+  },
+  {
+    loai: 'yeu_dau_dan',
+    tieuDe: v => `Diệt ${v.yeuThu} đầu đàn tinh anh`,
+    moTa: v => `Trận hộ sơn ngoại vi ở 【${v.vungTen}】 bị thú triều nhỏ cào rách. Con 【${v.yeuThu} (Tinh anh)】 đang dẫn bầy chiếm cứ khe núi.`,
+    coDongMinh: true,
+    laTinhAnh: true,
+    chBase: 36,
+    ltMult: 1.35,
+    han: 3,
+    kieuDich: 'yeu_thu'
+  },
+  {
+    loai: 'ap_tai_linh_thach',
+    tieuDe: v => `Áp tải linh thạch từ mỏ ${v.vungTen}`,
+    moTa: v => `Mỏ linh thạch ở 【${v.vungTen}】 gom đủ sản lượng nửa năm đóng vào sáu sọt mây. Mùi linh khí nồng đậm dọc đường rất dễ dẫn yêu thú hoặc sơn tặc tới cướp.`,
+    tonThang: 2,
+    chBase: 38,
+    ltMult: 1.4,
+    han: 2,
+    kieuDich: 'yeu_thu'
+  },
+  {
+    loai: 'ap_tai_dan_duoc',
+    tieuDe: v => `Hộ tống hộp đan tới ${v.vungTen}`,
+    moTa: v => `Hộp gỗ trầm niêm phong bùa chú chứa đan dược đáp lễ của sư môn cần đưa gấp qua 【${v.vungTen}】. Đi được nửa đường bỗng nghe tiếng thú gầm trong rừng sâu.`,
+    tonThang: 2,
+    chBase: 34,
+    ltMult: 1.25,
+    han: 2,
+    kieuDich: 'yeu_thu'
+  },
+  {
+    loai: 'ho_tong_de_tu',
+    tieuDe: v => `Đón tân đệ tử linh căn tại ${v.vungTen}`,
+    moTa: v => `Năm nay tông môn tuyển được một thiếu niên có linh căn tốt tại 【${v.vungTen}】. Trên đường dẫn về sơn môn, yêu thú bất ngờ chặn lối rừng thông.`,
+    tonThang: 2,
+    chBase: 32,
+    ltMult: 1.15,
+    han: 2,
+    kieuDich: 'yeu_thu'
+  },
+  {
+    loai: 'phan_do_bi_kip',
+    tieuDe: v => `Truy bắt phản đồ trộm kinh thư tại ${v.vungTen}`,
+    moTa: v => `Tàng Kinh Các phát hiện thất lạc một bộ công pháp. Lần theo dấu vết tới 【${v.vungTen}】, thấy gã đệ tử phản môn đã lộn trái áo bào, bó chặt quyển kinh sau lưng.`,
+    coDongMinh: true,
+    chBase: 35,
+    ltMult: 1.3,
+    han: 3,
+    kieuDich: 'phan_do'
+  },
+  {
+    loai: 'phan_do_dan_phong',
+    tieuDe: v => `Truy hồi đan dược thất lạc ở ${v.vungTen}`,
+    moTa: v => `Đan phòng mất nửa lò đan dược. Tìm tới căn nhà tranh ở 【${v.vungTen}】, thấy kẻ trộm đang đút đan cho đứa trẻ sốt mê man: "Đợi nó hạ sốt, ta tự theo ngươi về chịu phạt."`,
+    coChoDoi: true,
+    chBase: 36,
+    ltMult: 1.2,
+    han: 3,
+    kieuDich: 'phan_do'
+  },
+  {
+    loai: 'phan_do_chan_truyen',
+    tieuDe: v => `Thanh lý môn hộ đệ tử phản tông tinh anh`,
+    moTa: v => `Chấp sự đưa thẻ ngọc khắc lệnh truy sát: kẻ phản bội từng là cao đồ của tông, nay mang bí thuật trấn phái bỏ trốn tới 【${v.vungTen}】.`,
+    coDongMinh: true,
+    laTinhAnh: true,
+    chBase: 48,
+    ltMult: 1.6,
+    han: 3,
+    kieuDich: 'phan_do'
+  },
+  {
+    loai: 'diet_ma_tu',
+    pheYeuCau: 'chinh',
+    tieuDe: v => `Phá đàn huyết tế của ma tu ở ${v.vungTen}`,
+    moTa: v => `Ngoài 【${v.vungTen}】 dựng một tế đàn đá tà ác, ma tu đang vẽ huyết phù bắt dân thường tế luyện. Không ra tay ngay thì hậu quả khôn lường!`,
+    coDongMinh: true,
+    coDanhUp: { chiSo: 'canCot', doKho: 16, nhan: 'Đánh lén chặt đứt trận kỳ trước (-25% HP địch)' },
+    chBase: 40,
+    ltMult: 1.45,
+    han: 3,
+    kieuDich: 'ma_tu'
+  },
+  {
+    loai: 'giet_mat_tham',
+    pheYeuCau: 'ta',
+    tieuDe: v => `Diệt mật thám chính đạo quanh ${v.vungTen}`,
+    moTa: v => `Có kẻ giả dạng tiều phu vẽ bản đồ đường lên núi quanh 【${v.vungTen}】 vừa đốt phù truyền tin. Phải diệt khẩu trước khi tin lọt ra ngoài!`,
+    coDongMinh: true,
+    chBase: 38,
+    ltMult: 1.4,
+    han: 3,
+    kieuDich: 'mat_tham'
+  }
+];
+
+function taoNhiemVuTongMonNgauNhien(tmDef, cgDich, slotIdx) {
+  const taDao = laTongMonTaDao(tmDef);
+  const poolMau = TONG_MON_NV_MAU.filter(m => {
+    if (m.pheYeuCau === 'chinh' && taDao) return false;
+    if (m.pheYeuCau === 'ta' && !taDao) return false;
+    return true;
+  });
+  const mau = pickRandom(poolMau) || TONG_MON_NV_MAU[0];
+  const vung = chonVungNhiemVuTongMon(tmDef);
+  const ytPool = (window.PN_DATA.yeuThu || []).filter(y => (y.canhGioi ?? 0) <= Math.min(9, cgDich + 1));
+  const yeuThu = pickRandom(ytPool) || (window.PN_DATA.yeuThu && window.PN_DATA.yeuThu[0]) || { ten: 'Yêu Thú Hoang Dã' };
+  const capBac = state.tongMon?.capBac || 0;
+  const heSoCap = 1 + capBac * 0.14;
+  const congHien = Math.max(15, Math.round(mau.chBase * (1 + Math.max(0, cgDich - state.canhGioi) * 0.3) * heSoCap));
+  const linhThach = Math.max(25, Math.round(45 * Math.pow(2.3, cgDich) * (mau.ltMult || 1)));
+  const tenDich =
+    mau.kieuDich === 'yeu_thu'
+      ? `${yeuThu.ten}${mau.laTinhAnh ? ' (Tinh anh)' : ''}`
+      : mau.kieuDich === 'ma_tu'
+      ? `Huyết Sát Ma Tu (${layCanhGioiDef(cgDich).ten})`
+      : mau.kieuDich === 'mat_tham'
+      ? `Mật Thám Chính Đạo (${layCanhGioiDef(cgDich).ten})`
+      : `Phản Đồ ${tmDef ? tmDef.ten : 'Sư Môn'}${mau.laTinhAnh ? ' (Tinh anh)' : ''}`;
+
+  return {
+    id: `nvtm_${state.nam}_${slotIdx}_${Math.random().toString(36).slice(2, 6)}`,
+    loai: mau.loai,
+    ten: mau.tieuDe({ yeuThu: yeuThu.ten, vungTen: vung.ten }),
+    moTa: mau.moTa({ yeuThu: yeuThu.ten, vungTen: vung.ten }),
+    vungId: vung.id,
+    vungTen: vung.ten,
+    canhGioiDich: cgDich,
+    tenDich,
+    laTinhAnh: !!mau.laTinhAnh,
+    coDongMinh: !!mau.coDongMinh,
+    coChoDoi: !!mau.coChoDoi,
+    coDanhUp: mau.coDanhUp || null,
+    tonThang: mau.tonThang || 0,
+    congHien,
+    linhThach,
+    hanNam: mau.han || 3
+  };
+}
+
+function sinhDonCuaTong() {
+  const tm = chuanHoaTongMonState();
+  if (!tm) return null;
+  const cg = state.canhGioi || 0;
+  const pool = (window.PN_DATA.vatPham || []).filter(
+    v => ['dan', 'phu_luc', 'linh_thao', 'yeu_dan'].includes(v.loai) && (v.canhGioi ?? v.bac ?? 0) <= cg + 1 && (v.gia || 0) > 0
+  );
+  const vp = pickRandom(pool.length > 0 ? pool : window.PN_DATA.vatPham);
+  if (!vp) return null;
+  const soLuong = (vp.gia || 20) > 250 ? 1 : (vp.gia || 20) > 70 ? 2 : 3;
+  const congHien = Math.max(15, Math.round(Math.sqrt(Math.max(10, vp.gia || 20)) * 3.2 * soLuong));
+  tm.donCuaTong = { id: vp.id, ten: vp.ten, soLuong, congHien };
+  tm.donDaGiao = false;
+  return tm.donCuaTong;
+}
+
+function damBaoDuLieuTongMon() {
+  const tm = chuanHoaTongMonState();
+  if (!tm) return null;
+  const ky = Math.floor((Math.max(1, state.nam) - 1) / TONG_MON_KY_NAM);
+  const tmDef = layTongMonDef(tm.id);
+  if (tm.bangKy !== ky || tm.bangViec.length === 0) {
+    tm.bangKy = ky;
+    const offsets = [-1, 0, 0, 1];
+    tm.bangViec = offsets.map((d, idx) => {
+      const cg = Math.max(0, Math.min(9, (state.canhGioi || 0) + d));
+      return taoNhiemVuTongMonNgauNhien(tmDef, cg, idx);
+    });
+  }
+  if (tm.donKy !== ky || !tm.donCuaTong) {
+    tm.donKy = ky;
+    sinhDonCuaTong();
+  }
+  return tm;
+}
+
 function giaNhapTongMon(tmId) {
   const tm = layTongMonDef(tmId);
   if (!tm) return;
@@ -2590,98 +2870,591 @@ function giaNhapTongMon(tmId) {
     veGiaoDien();
     return;
   }
-  state.tongMon = { id: tmId, capBac: 0, congHien: 30, namBongLoc: 0 };
+  state.tongMon = {
+    id: tmId,
+    capBac: 0,
+    congHien: 30,
+    congTich: 30,
+    namBongLoc: Math.max(0, (state.nam || 1) - 1),
+    namKhaoHachLai: 0,
+    namQuyen: 0,
+    ltDaQuyenNam: 0,
+    donKy: -1,
+    donDaGiao: false,
+    bangKy: -1,
+    bangViec: [],
+    viecNhan: [],
+    viecVatNhan: {}
+  };
+  damBaoDuLieuTongMon();
   const hcMoi = thayDoiHaoCamTheLuc(tmId, 10);
   ghiNhatKy(`🏛️ Bạn bái nhập sơn môn 【${tm.ten}】 (${tm.phe}), nhận thân phận ${TONG_MON_CHUC_VI[0].ten} (Hảo cảm thế lực: ${hcMoi}/100)!`, 'dai_cat');
   luuGame();
   veGiaoDien();
 }
 
-function roiTongMon() {
+function phiXuongNuiEmDep() {
+  if (!state || !state.tongMon) return 0;
+  return state.tongMon.capBac === 0 ? 0 : 30 * (state.tongMon.capBac + 1);
+}
+
+function moModalRoiTongMon() {
+  if (!state.tongMon || state.ketThuc || state.tranHienTai || state.hauChienNpc || state.suKienHienTai) return;
+  const tmDef = layTongMonDef(state.tongMon.id);
+  const phi = phiXuongNuiEmDep();
+  state.suKienHienTai = {
+    id: `sk_roi_tong_${Date.now()}`,
+    bienCo: 'tong_mon',
+    ten: `🚪 Chấp Sự Đường — Bàn chuyện rời 【${tmDef ? tmDef.ten : 'Sư Môn'}】`,
+    text: `Chấp sự trưởng lão lật sổ đệ tử, chậm rãi nói: "Muốn xuống núi êm đẹp thì nộp lại ${phi} Cống hiến làm lệ phí xóa tên, hai bên dứt khoát. Nếu tự ý bỏ trốn, Chấp Pháp Đường sẽ ghi danh truy nã!"`,
+    choices: [
+      {
+        text: phi > 0 ? `Nộp ${phi} Cống hiến, chắp tay xin xuống núi êm đẹp` : `Xin xóa tên đệ tử ký danh, xuống núi êm đẹp`,
+        requires: phi > 0 ? { congHien: phi } : null,
+        effects: [{ roiTongMonKieu: 'em_dep' }]
+      },
+      {
+        text: `Lén bỏ trốn khỏi sơn môn lúc canh ba (bị Chấp Pháp Đường truy nã!)`,
+        effects: [{ roiTongMonKieu: 'bo_tron' }]
+      },
+      {
+        text: `Thôi, ở lại sơn môn tiếp tục tu hành`,
+        effects: []
+      }
+    ]
+  };
+  veGiaoDien();
+}
+
+function roiTongMon(kieu = 'em_dep') {
   if (!state.tongMon) return;
   const tmId = state.tongMon.id;
   const tm = layTongMonDef(tmId);
-  const hcMoi = thayDoiHaoCamTheLuc(tmId, -15);
-  ghiNhatKy(`🚪 Bạn chắp tay cáo biệt 【${tm ? tm.ten : tmId}】, quay lại làm tán tu tự do (Hảo cảm thế lực: ${hcMoi}/100).`, 'canh_bao');
+  const phi = phiXuongNuiEmDep();
+  if (kieu === 'em_dep' && state.tongMon.congHien >= phi) {
+    const hcMoi = thayDoiHaoCamTheLuc(tmId, -8);
+    ghiNhatKy(`📜 Tên bạn được gạch khỏi sổ đệ tử 【${tm ? tm.ten : tmId}】 một cách êm đẹp (Lệ phí ${phi} CH · Hảo cảm: ${hcMoi}/100).`, 'canh_bao');
+  } else {
+    const hcMoi = thayDoiHaoCamTheLuc(tmId, -45);
+    gieoHatNhanQua({
+      loai: 'truy_na_tong_mon',
+      tmId,
+      canhGioi: state.canhGioi,
+      tenDoiTuong: tm ? tm.ten : tmId,
+      namCho: 2 + Math.floor(Math.random() * 4),
+      moTa: `Phản đồ trốn khỏi 【${tm ? tm.ten : tmId}】 bị Chấp Pháp Đường phát lệnh truy nã`
+    });
+    ghiNhatKy(`🏃 Bạn tự ý bỏ trốn khỏi 【${tm ? tm.ten : tmId}】! Hảo cảm tụt còn ${hcMoi}/100, Chấp Pháp Đường đã ghi tên truy nã!`, 'nguy_hiem');
+  }
   state.tongMon = null;
   luuGame();
   veGiaoDien();
 }
 
-function lamNhiemVuTongMon() {
-  if (!state.tongMon || state.ketThuc || state.tranHienTai || state.hauChienNpc) return;
-  const tmId = state.tongMon.id;
-  const tm = layTongMonDef(tmId);
-  tienThoiGian(3);
-  const congHienNhan = 25 + state.tongMon.capBac * 12;
-  const ltNhan = Math.round((25 + state.tongMon.capBac * 20) * Math.pow(2.4, state.canhGioi));
-  const tvNhan = Math.round(tinhTocDoTuLuyenNam() * 0.35);
+function lamViecThuongTrucTongMon(loai) {
+  const tm = chuanHoaTongMonState();
+  if (!tm || state.ketThuc || state.tranHienTai || state.hauChienNpc || state.suKienHienTai) return;
+  const tmDef = layTongMonDef(tm.id);
 
-  state.tongMon.congHien += congHienNhan;
-  state.linhThach += ltNhan;
+  if (loai === 'tran_thu_linh_dien') {
+    tienThoiGian(12);
+    if (state.ketThuc) { luuGame(); veGiaoDien(); return; }
+    const tvNhan = Math.round(tinhTocDoTuLuyenNam() * 1.0);
+    const chNhan = Math.round((16 + tm.capBac * 6) * Math.pow(1.22, state.canhGioi));
+    state.tuVi += tvNhan;
+    thayDoiCongHienTongMon(chNhan);
+    thayDoiHaoCamTheLuc(tm.id, 2);
+    ghiNhatKy(`🌾 Trấn thủ Linh Điền 1 năm tại 【${tmDef?.ten || 'Sư Môn'}】: +${tvNhan.toLocaleString()} Tu vi, +${chNhan} Cống hiến, +2 Hảo cảm.`, 'tot');
+
+    // Cơ chế biến cố 45% giống scene xam_pham trong VKTT ev.nhiem_vu_tong_mon
+    if (!state.suKienHienTai && !state.tranHienTai && Math.random() < 0.45) {
+      const cgDich = state.canhGioi;
+      const cgDef = layCanhGioiDef(cgDich);
+      const chThem = Math.max(12, Math.round(16 * (1 + cgDich * 0.25)));
+      state.suKienHienTai = {
+        id: `sk_linh_dien_xam_pham_${Date.now()}`,
+        bienCo: 'tong_mon',
+        ten: '🌿 Trấn Thủ Linh Điền — Kẻ Xâm Phạm',
+        text: `Đêm cuối phiên trấn thủ, trận kỳ quanh linh điền sư môn bỗng rung lên bần bật! Một tên tán tu lén lách qua khe trận, đang vơ vét linh thảo bỏ vào túi trữ vật.`,
+        choices: [
+          {
+            text: `Ra tay bắt giữ kẻ trộm (Thắng: +${chThem} Cống hiến & vật phẩm)`,
+            effects: [
+              {
+                combat: {
+                  ten: `Kẻ Trộm Linh Điền (${cgDef.ten})`,
+                  hp: Math.round(cgDef.hpGoc * 1.05),
+                  congKich: Math.round(cgDef.congKichGoc * 1.0),
+                  phongThu: cgDef.phongThuGoc,
+                  linhThach: Math.round(45 * Math.pow(2.2, cgDich)),
+                  canhGioiDich: cgDich,
+                  giuNguyenChiSo: true,
+                  linhDienSuMon: { congHien: chThem, tmId: tm.id }
+                }
+              }
+            ]
+          },
+          {
+            text: `Đánh động cho hắn bỏ chạy (an toàn, không công không tội)`,
+            effects: [{ log: `💨 Kẻ trộm giật mình bỏ chạy thục mạng. Phiên trấn thủ khép lại bình yên.` }]
+          }
+        ]
+      };
+    }
+    luuGame();
+    veGiaoDien();
+    return;
+  }
+
+  if (tm.capBac > 1) {
+    ghiNhatKy('Việc tạp dịch chỉ dành cho Đệ Tử Ký Danh và Ngoại Môn!', 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+
+  tienThoiGian(6);
+  if (state.ketThuc) { luuGame(); veGiaoDien(); return; }
+  const tvNhan = Math.round(tinhTocDoTuLuyenNam() * 0.25);
   state.tuVi += tvNhan;
-  const hcMoi = thayDoiHaoCamTheLuc(tmId, 5);
+
+  if (loai === 'quet_tang_kinh_cac') {
+    thayDoiCongHienTongMon(8);
+    let themMsg = '';
+    const lastNgo = tm.viecVatNhan.ngoTinhNam || -99;
+    if (state.nam - lastNgo >= 3 && Math.random() < 0.35) {
+      tm.viecVatNhan.ngoTinhNam = state.nam;
+      state.chiSo.ngoTinh = (state.chiSo.ngoTinh || 10) + 1;
+      themMsg = ' · 💡 Trộm đọc được tâm đắc tiền nhân: +1 Ngộ tính!';
+    }
+    ghiNhatKy(`🧹 Quét dọn Tàng Kinh Các (6 tháng): +8 Cống hiến, +${tvNhan.toLocaleString()} Tu vi${themMsg}`, 'tot');
+  } else if (loai === 'ganh_nuoc_linh_tuyen') {
+    thayDoiCongHienTongMon(8);
+    let themMsg = '';
+    const lastCot = tm.viecVatNhan.canCotNam || -99;
+    if (state.nam - lastCot >= 3 && Math.random() < 0.35) {
+      tm.viecVatNhan.canCotNam = state.nam;
+      state.chiSo.canCot = (state.chiSo.canCot || 10) + 1;
+      themMsg = ' · 💪 Hàn khí linh tuyền tôi luyện gân cốt: +1 Căn cốt!';
+    }
+    ghiNhatKy(`🪣 Gánh nước Linh Tuyền (6 tháng): +8 Cống hiến, +${tvNhan.toLocaleString()} Tu vi${themMsg}`, 'tot');
+  } else {
+    thayDoiCongHienTongMon(7);
+    const pool = (window.PN_DATA.vatPham || []).filter(v => ['dan', 'linh_thao', 'phu_luc'].includes(v.loai) && (v.canhGioi ?? 0) <= Math.max(1, state.canhGioi));
+    const qua = Math.random() < 0.55 ? pickRandom(pool) : null;
+    const themOk = qua ? themVat(qua.id, 1) : false;
+    ghiNhatKy(
+      `⚗️ Phụ việc Đan Phòng / Khí Đường (6 tháng): +7 Cống hiến, +${tvNhan.toLocaleString()} Tu vi${themOk ? ` · 🎁 Sư huynh thưởng [${qua.ten}]` : ''}.`,
+      'tot'
+    );
+  }
+  luuGame();
+  veGiaoDien();
+}
+
+function nhanNhiemVuTongMon(nvId) {
+  const tm = damBaoDuLieuTongMon();
+  if (!tm) return;
+  if (tm.viecNhan.length >= MAX_NHIEM_VU_TONG_MON) {
+    ghiNhatKy(`Bạn đang ôm tối đa ${MAX_NHIEM_VU_TONG_MON} nhiệm vụ tông môn, hãy hoàn thành bớt trước!`, 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+  const idx = tm.bangViec.findIndex(v => v.id === nvId);
+  if (idx < 0) {
+    ghiNhatKy('Ngọc giản nhiệm vụ này không còn trên bảng!', 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+  const [nv] = tm.bangViec.splice(idx, 1);
+  tm.viecNhan.push({ ...nv, namNhan: state.nam, hetHanNam: state.nam + (nv.hanNam || 3) });
+  ghiNhatKy(`📋 Nhận nhiệm vụ tông môn: 【${nv.ten}】 (Hạn: Năm ${state.nam + (nv.hanNam || 3)}).`, 'tot');
+  luuGame();
+  veGiaoDien();
+}
+
+function boNhiemVuTongMon(nvId) {
+  const tm = chuanHoaTongMonState();
+  if (!tm) return;
+  const idx = tm.viecNhan.findIndex(v => v.id === nvId);
+  if (idx < 0) return;
+  const [nv] = tm.viecNhan.splice(idx, 1);
+  const phatCh = Math.max(3, Math.round(nv.congHien * 0.2));
+  thayDoiCongHienTongMon(-phatCh);
+  const hcMoi = thayDoiHaoCamTheLuc(tm.id, -3);
+  ghiNhatKy(`❌ Bạn hủy bỏ nhiệm vụ 【${nv.ten}】! Bị Chấp sự phạt -${phatCh} Cống hiến, -3 Hảo cảm thế lực (${hcMoi}/100).`, 'canh_bao');
+  luuGame();
+  veGiaoDien();
+}
+
+function kiemTraQuaHanNhiemVuTongMon() {
+  const tm = chuanHoaTongMonState();
+  if (!tm || !Array.isArray(tm.viecNhan) || tm.viecNhan.length === 0) return;
+  const conLai = [];
+  for (const nv of tm.viecNhan) {
+    if ((state.nam || 1) > nv.hetHanNam && state.tranHienTai?.tongMonQuestId !== nv.id) {
+      const phatCh = Math.max(3, Math.round(nv.congHien * 0.2));
+      thayDoiCongHienTongMon(-phatCh);
+      thayDoiHaoCamTheLuc(tm.id, -3);
+      ghiNhatKy(`⏰ Quá hạn nhiệm vụ tông môn 【${nv.ten}】! Chấp sự phạt -${phatCh} Cống hiến, -3 Hảo cảm.`, 'canh_bao');
+    } else {
+      conLai.push(nv);
+    }
+  }
+  tm.viecNhan = conLai;
+}
+
+function hoanThanhNhiemVuTongMon(nvId, dongMinhNpcId = null) {
+  const tm = chuanHoaTongMonState();
+  if (!tm) return false;
+  const idx = tm.viecNhan.findIndex(v => v.id === nvId);
+  if (idx < 0) return false;
+  const [nv] = tm.viecNhan.splice(idx, 1);
+
+  thayDoiCongHienTongMon(nv.congHien);
+  state.linhThach += nv.linhThach;
+  const hcMoi = thayDoiHaoCamTheLuc(tm.id, 4);
+
+  let dmMsg = '';
+  if (dongMinhNpcId && state.npcs && state.npcs[dongMinhNpcId]?.conSong) {
+    const dm = state.npcs[dongMinhNpcId];
+    thayDoiHaoCam(dm, 6, true);
+    ghiKyUcNpc(dm, `Cùng ${state.ten} hoàn thành nhiệm vụ tông môn "${nv.ten}".`);
+    dmMsg = ` · 🤝 [${dm.ten}] +6 Hảo cảm`;
+  }
 
   ghiNhatKy(
-    `📜 Hoàn thành tông vụ cho 【${tm ? tm.ten : 'Sư môn'}】 (3 tháng): +${congHienNhan} Cống hiến, +${ltNhan.toLocaleString()} LT, +${tvNhan.toLocaleString()} Tu vi, +5 Hảo cảm thế lực (${hcMoi}/100).`,
-    'tot'
+    `🏅 Hoàn thành nhiệm vụ tông môn 【${nv.ten}】! Thưởng: +${nv.congHien} Cống hiến (Tổng công tích: ${tm.congTich}), +${nv.linhThach.toLocaleString()} LT, +4 Hảo cảm thế lực (${hcMoi}/100)${dmMsg}.`,
+    'dai_cat'
   );
+  return true;
+}
+
+function thucHienNhiemVuTongMon(nvId) {
+  const tm = chuanHoaTongMonState();
+  if (!tm || state.ketThuc || state.tranHienTai || state.hauChienNpc || state.suKienHienTai) return;
+  const nv = tm.viecNhan.find(v => v.id === nvId);
+  if (!nv) return;
+
+  let thangDi = 0;
+  if (nv.vungId && state.vungHienTai !== nv.vungId) {
+    const vungDich = layVungDef(nv.vungId);
+    if (state.canhGioi < (vungDich.canhGioiYeuCau || 0)) {
+      ghiNhatKy(`⚠️ Khu vực 【${vungDich.ten}】 quá nguy hiểm (Cần ${layCanhGioiDef(vungDich.canhGioiYeuCau).ten})! Bạn có thể bỏ việc nếu vượt quá khả năng.`, 'canh_bao');
+      veGiaoDien();
+      return;
+    }
+    thangDi = tinhThangDiChuyen(nv.vungId);
+    state.vungHienTai = nv.vungId;
+    damBaoDiaDiemVung(nv.vungId);
+    tienThoiGian(thangDi + (nv.tonThang || 0));
+    if (state.ketThuc) { luuGame(); veGiaoDien(); return; }
+  } else if (nv.tonThang > 0) {
+    tienThoiGian(nv.tonThang);
+    if (state.ketThuc) { luuGame(); veGiaoDien(); return; }
+  }
+
+  const cgDef = layCanhGioiDef(Math.min(9, nv.canhGioiDich));
+  const heSoDich = nv.laTinhAnh ? 1.4 : 1.12;
+  const combatBase = {
+    ten: nv.tenDich,
+    hp: Math.round(cgDef.hpGoc * heSoDich),
+    congKich: Math.round(cgDef.congKichGoc * (nv.laTinhAnh ? 1.2 : 1.02)),
+    phongThu: Math.round(cgDef.phongThuGoc * (nv.laTinhAnh ? 1.15 : 1.0)),
+    linhThach: Math.round(40 * Math.pow(2.2, nv.canhGioiDich)),
+    canhGioiDich: nv.canhGioiDich,
+    giuNguyenChiSo: true,
+    tongMonQuestId: nv.id
+  };
+
+  const dm = nv.coDongMinh ? timDongMinhTongMon() : null;
+  const choices = [
+    {
+      text: `Lập tức ra tay giải quyết mục tiêu`,
+      effects: [{ combat: combatBase }]
+    }
+  ];
+
+  if (nv.coDanhUp) {
+    choices.push({
+      text: nv.coDanhUp.nhan,
+      check: { chiSo: nv.coDanhUp.chiSo, doKho: nv.coDanhUp.doKho },
+      success: [{ combat: { ...combatBase, hpMult: 0.75 }, log: '⚡ Đánh úp thành công, địch mất 25% khí huyết đầu trận!' }],
+      failure: [{ combat: { ...combatBase }, log: '⚠️ Đánh úp bị phát hiện, phải đối đầu trực diện!' }]
+    });
+  }
+
+  if (nv.coChoDoi) {
+    choices.push({
+      text: `Chờ đứa bé hạ sốt rồi mới quyết đấu công bằng (+3 Hảo cảm thế lực khi thắng)`,
+      effects: [
+        { combat: combatBase, log: `🌅 Gần sáng đứa trẻ hạ sốt, đối phương đứng dậy rút kiếm nghênh chiến không oán thán.` }
+      ]
+    });
+  }
+
+  if (dm) {
+    choices.push({
+      text: `🤝 Cùng 【${dm.ten}】 hợp lực ra tay (đồng minh trợ chiến mỗi lượt)`,
+      effects: [{ combat: { ...combatBase, dongMinhNpcId: dm.id, dongMinhTen: dm.ten } }]
+    });
+  }
+
+  choices.push({
+    text: `Để lúc khác (quay lại chuẩn bị thêm)`,
+    effects: []
+  });
+
+  state.suKienHienTai = {
+    id: `sk_tm_${nv.id}`,
+    bienCo: 'tong_mon',
+    ten: `📜 Tông Vụ: ${nv.ten}`,
+    text: `${thangDi > 0 ? `(Lên đường mất ${thangDi} tháng tới 【${nv.vungTen}】)\n` : ''}${nv.moTa}`,
+    choices
+  };
+  luuGame();
+  veGiaoDien();
+}
+
+function giaoDonCuaTong() {
+  const tm = damBaoDuLieuTongMon();
+  if (!tm || !tm.donCuaTong || tm.donDaGiao) return;
+  const don = tm.donCuaTong;
+  if (soLuongVat(don.id) < don.soLuong) {
+    ghiNhatKy(`Cần đủ [${don.ten}] x${don.soLuong} mới có thể giao đơn cho tông môn!`, 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+  themVat(don.id, -don.soLuong);
+  tm.donDaGiao = true;
+  thayDoiCongHienTongMon(don.congHien);
+  const hcMoi = thayDoiHaoCamTheLuc(tm.id, 3);
+  ghiNhatKy(`📦 Giao đơn thu mua [${don.ten}] x${don.soLuong}: +${don.congHien} Cống hiến, +3 Hảo cảm (${hcMoi}/100)!`, 'tot');
   luuGame();
   veGiaoDien();
 }
 
 function nhanBongLocTongMon() {
-  if (!state.tongMon) return;
-  if (state.tongMon.namBongLoc >= state.nam) {
+  const tm = chuanHoaTongMonState();
+  if (!tm) return;
+  const cv = TONG_MON_CHUC_VI[tm.capBac] || TONG_MON_CHUC_VI[0];
+  const soNam = Math.min(cv.tichToiDaNam, Math.max(0, (state.nam || 1) - (tm.namBongLoc ?? state.nam)));
+  if (soNam <= 0) {
     ghiNhatKy('Năm nay bạn đã lĩnh bổng lộc tông môn rồi, hãy đợi sang năm sau!', 'canh_bao');
     veGiaoDien();
     return;
   }
-  const cv = TONG_MON_CHUC_VI[state.tongMon.capBac] || TONG_MON_CHUC_VI[0];
-  const thuong = Math.round(cv.bongLoc * Math.pow(1.6, Math.max(0, state.canhGioi - cv.yeuCauCg)));
-  state.tongMon.namBongLoc = state.nam;
-  state.linhThach += thuong;
-  ghiNhatKy(`💎 Lĩnh bổng lộc chức vị [${cv.ten}]: +${thuong.toLocaleString()} Linh thạch.`, 'tot');
+  const thuongLt = Math.round(cv.bongLoc * soNam * Math.pow(1.45, Math.max(0, state.canhGioi - cv.yeuCauCg)));
+  const thuongCh = Math.round((cv.bongCh || 0) * soNam);
+  tm.namBongLoc = state.nam;
+  state.linhThach += thuongLt;
+  if (thuongCh > 0) thayDoiCongHienTongMon(thuongCh);
+  ghiNhatKy(`💎 Lĩnh bổng lộc ${soNam} năm [${cv.ten}]: +${thuongLt.toLocaleString()} Linh thạch${thuongCh > 0 ? `, +${thuongCh} Cống hiến` : ''}.`, 'tot');
   luuGame();
   veGiaoDien();
 }
 
 function thangCapTongMon() {
-  if (!state.tongMon) return;
-  const nextIdx = state.tongMon.capBac + 1;
+  const tm = chuanHoaTongMonState();
+  if (!tm || state.ketThuc || state.tranHienTai || state.hauChienNpc || state.suKienHienTai) return;
+  const nextIdx = tm.capBac + 1;
   if (nextIdx >= TONG_MON_CHUC_VI.length) return;
   const nextCv = TONG_MON_CHUC_VI[nextIdx];
-  if (state.tongMon.congHien < nextCv.yeuCauCongHien || state.canhGioi < nextCv.yeuCauCg) {
+  if ((tm.congTich || 0) < nextCv.yeuCauCongHien || state.canhGioi < nextCv.yeuCauCg) {
     ghiNhatKy(
-      `Để tấn thăng [${nextCv.ten}] cần ${nextCv.yeuCauCongHien} Cống hiến và cảnh giới 【${layCanhGioiDef(nextCv.yeuCauCg).ten}】!`,
+      `Để tấn thăng [${nextCv.ten}] cần Công tích ≥ ${nextCv.yeuCauCongHien} (hiện có ${tm.congTich}) và cảnh giới 【${layCanhGioiDef(nextCv.yeuCauCg).ten}】!`,
       'canh_bao'
     );
     veGiaoDien();
     return;
   }
-  state.tongMon.congHien -= nextCv.yeuCauCongHien;
-  state.tongMon.capBac = nextIdx;
-  ghiNhatKy(`🎖️ Chúc mừng bạn được sắc phong thành 【${nextCv.ten}】!`, 'dai_cat');
+  if ((tm.namKhaoHachLai || 0) > state.nam) {
+    ghiNhatKy(`⏳ Bạn vừa trượt khảo hạch trước đó, cần đợi tới Năm ${tm.namKhaoHachLai} mới được thi lại!`, 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+
+  // Lên Ngoại Môn (bậc 1): phong thẳng; từ Nội Môn trở lên: phải qua Khảo hạch Lôi đài (giống VKTT!)
+  if (nextIdx < 2) {
+    tm.capBac = nextIdx;
+    thayDoiHaoCamTheLuc(tm.id, 5);
+    ghiNhatKy(`🎖️ Chúc mừng bạn được sắc phong thành 【${nextCv.ten}】 (Không bị trừ điểm Cống hiến)!`, 'dai_cat');
+    luuGame();
+    veGiaoDien();
+    return;
+  }
+
+  const cgThi = nextCv.yeuCauCg;
+  const cgDef = layCanhGioiDef(cgThi);
+  const tmDef = layTongMonDef(tm.id);
+  state.suKienHienTai = {
+    id: `sk_khao_hach_${nextIdx}_${Date.now()}`,
+    bienCo: 'tong_mon',
+    ten: `⚔️ Lôi Đài Khảo Hạch Tấn Thăng 【${nextCv.ten}】`,
+    text: `Giám khảo của 【${tmDef?.ten || 'Sư Môn'}】 bước lên lôi đài: "Công tích và tu vi của ngươi đã đủ, nhưng muốn nhận áo bào ${nextCv.ten} phải vượt qua trận tỷ thí thực lực (${cgDef.ten}) trước toàn môn!"`,
+    choices: [
+      {
+        text: `Bước lên lôi đài tiếp chiêu khảo hạch`,
+        effects: [
+          {
+            combat: {
+              ten: `Giám Khảo Lôi Đài (${cgDef.ten})`,
+              hp: Math.round(cgDef.hpGoc * (1.1 + nextIdx * 0.08)),
+              congKich: Math.round(cgDef.congKichGoc * (1.02 + nextIdx * 0.04)),
+              phongThu: cgDef.phongThuGoc,
+              linhThach: Math.round(30 * Math.pow(2.0, cgThi)),
+              canhGioiDich: cgThi,
+              giuNguyenChiSo: true,
+              khaoHachCapBac: nextIdx
+            }
+          }
+        ]
+      },
+      {
+        text: `Chưa chuẩn bị kỹ, tạm hoãn khảo hạch`,
+        effects: []
+      }
+    ]
+  };
+  veGiaoDien();
+}
+
+function hoanThanhKhaoHachTongMon(capBacMoi) {
+  const tm = chuanHoaTongMonState();
+  if (!tm || capBacMoi <= tm.capBac || capBacMoi >= TONG_MON_CHUC_VI.length) return;
+  tm.capBac = capBacMoi;
+  tm.namKhaoHachLai = 0;
+  const hcMoi = thayDoiHaoCamTheLuc(tm.id, 5);
+  const cv = TONG_MON_CHUC_VI[capBacMoi];
+  ghiNhatKy(`🎖️ Thắng trận Khảo Hạch Lôi Đài! Chính thức sắc phong 【${cv.ten}】 (+5 Hảo cảm: ${hcMoi}/100)!`, 'dai_cat');
+}
+
+function beQuanLinhMachTongMon(soNam = 1) {
+  const tm = chuanHoaTongMonState();
+  if (!tm || state.ketThuc || state.tranHienTai || state.hauChienNpc || state.suKienHienTai) return;
+  const cv = TONG_MON_CHUC_VI[tm.capBac] || TONG_MON_CHUC_VI[0];
+  if (tm.capBac < 1) {
+    ghiNhatKy('⚠️ Cần đạt chức vị Đệ Tử Ngoại Môn trở lên mới được dùng Linh Mạch Sư Môn!', 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+  const phi = cv.phiLinhMachNam * soNam;
+  if (tm.congHien < phi) {
+    ghiNhatKy(`Cần ${phi} Cống hiến để thuê Linh Mạch Sư Môn ${soNam} năm!`, 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+  thayDoiCongHienTongMon(-phi);
+  const heSo = 1 + cv.linhMachHeSo;
+  const tuViNhan = Math.round(tinhTocDoTuLuyenNam() * heSo * soNam * (0.95 + Math.random() * 0.1));
+  state.tuVi += tuViNhan;
+  tienThoiGian(soNam * 12);
+  ghiNhatKy(`🏔️ Bế quan ${soNam} năm trên Linh Mạch Sư Môn (Hệ số x${heSo.toFixed(2)}, -${phi} CH): thu được +${tuViNhan.toLocaleString()} Tu vi!`, 'dai_cat');
+  luuGame();
+  veGiaoDien();
+}
+
+function tinhCongHienQuyenGop(soLt) {
+  const tm = chuanHoaTongMonState();
+  if (!tm) return { ch: 0, block: 100 };
+  const block = Math.max(80, Math.round(80 * Math.pow(2, state.canhGioi || 0)));
+  let daQuyen = tm.namQuyen === state.nam ? tm.ltDaQuyenNam : 0;
+  let con = Math.max(0, Math.floor(soLt));
+  let ch = 0;
+  const tyLeGoc = Math.max(8, Math.round(block / 10)); // ~10 CH mỗi block đầu
+  while (con > 0) {
+    const buoc = Math.floor(daQuyen / block);
+    const denMoc = block * (buoc + 1) - daQuyen;
+    const dung = Math.min(con, denMoc);
+    const heSo = Math.pow(0.8, buoc);
+    ch += (dung / block) * tyLeGoc * heSo;
+    daQuyen += dung;
+    con -= dung;
+  }
+  return { ch: Math.floor(ch + 1e-9), block };
+}
+
+function quyenLinhThachTongMon(soLt) {
+  const tm = chuanHoaTongMonState();
+  if (!tm) return;
+  const val = Math.floor(Number(soLt) || 0);
+  if (val <= 0 || state.linhThach < val) {
+    ghiNhatKy(`Không đủ ${val.toLocaleString()} Linh thạch để quyên góp!`, 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+  const { ch } = tinhCongHienQuyenGop(val);
+  if (ch < 1) {
+    ghiNhatKy('Số linh thạch quá ít, tông môn chưa thể ghi nhận công tích!', 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+  if (tm.namQuyen !== state.nam) {
+    tm.namQuyen = state.nam;
+    tm.ltDaQuyenNam = 0;
+  }
+  state.linhThach -= val;
+  tm.ltDaQuyenNam += val;
+  thayDoiCongHienTongMon(ch);
+  ghiNhatKy(`💠 Quyên góp ${val.toLocaleString()} Linh thạch cho tông môn: nhận +${ch} Cống hiến (hiệu suất giảm dần theo mức quyên trong năm).`, 'tot');
+  luuGame();
+  veGiaoDien();
+}
+
+function layDsBaoKhoVatTu() {
+  const maxCg = Math.min(9, (state?.canhGioi || 0) + 1);
+  return (window.PN_DATA.vatPham || [])
+    .filter(v => ['dan', 'phu_luc'].includes(v.loai) && (v.canhGioi ?? 0) <= maxCg && (v.gia || 0) > 0)
+    .sort((a, b) => (a.canhGioi ?? 0) - (b.canhGioi ?? 0) || (a.gia || 0) - (b.gia || 0))
+    .slice(0, 8);
+}
+
+function phiDoiVatTuBaoKho(vp, tmId) {
+  const cv = state?.tongMon ? TONG_MON_CHUC_VI[state.tongMon.capBac] || TONG_MON_CHUC_VI[0] : TONG_MON_CHUC_VI[0];
+  const base = Math.max(12, Math.round(Math.sqrt(Math.max(20, vp.gia || 20)) * 3.8));
+  const giamKhachKhanh = layHaoCamTheLuc(tmId) >= 50 ? 0.9 : 1;
+  return Math.max(10, Math.round(base * (cv.giamGiaBaoKho || 1) * giamKhachKhanh));
+}
+
+function doiVatTuBaoKho(vpId) {
+  const tm = chuanHoaTongMonState();
+  if (!tm) return;
+  const vp = layVatPhamDef(vpId);
+  if (!vp) return;
+  const phi = phiDoiVatTuBaoKho(vp, tm.id);
+  if (tm.congHien < phi) {
+    ghiNhatKy(`Cần ${phi} Cống hiến để đổi [${vp.ten}] tại Bảo Khố!`, 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+  if (!themVat(vp.id, 1)) {
+    veGiaoDien();
+    return;
+  }
+  thayDoiCongHienTongMon(-phi);
+  ghiNhatKy(`🏛️ Đổi tại Bảo Khố Sư Môn: [${vp.ten}] (-${phi} Cống hiến).`, 'tot');
   luuGame();
   veGiaoDien();
 }
 
 function phiDoiBaoKhoTongMon(cp, tmId) {
+  const cv = state?.tongMon ? TONG_MON_CHUC_VI[state.tongMon.capBac] || TONG_MON_CHUC_VI[0] : TONG_MON_CHUC_VI[0];
   const base = Math.max(80, (cp.canhGioi + 1) * 120);
-  return layHaoCamTheLuc(tmId) >= 50 ? Math.round(base * 0.9) : base;
+  const giamKhachKhanh = layHaoCamTheLuc(tmId) >= 50 ? 0.9 : 1;
+  return Math.max(50, Math.round(base * (cv.giamGiaBaoKho || 1) * giamKhachKhanh));
 }
 
 function doiBaoKhoTongMon(cpId) {
-  if (!state.tongMon) return;
+  const tm = chuanHoaTongMonState();
+  if (!tm) return;
   const cp = layCongPhapDef(cpId);
   if (!cp || state.congPhapDaHoc.includes(cpId)) return;
-  const phiCongHien = phiDoiBaoKhoTongMon(cp, state.tongMon.id);
-  if (state.tongMon.congHien < phiCongHien) {
+  const phiCongHien = phiDoiBaoKhoTongMon(cp, tm.id);
+  if (tm.congHien < phiCongHien) {
     ghiNhatKy(`Cần ${phiCongHien} Điểm cống hiến để đổi bí tịch [${cp.ten}]!`, 'canh_bao');
     veGiaoDien();
     return;
   }
-  state.tongMon.congHien -= phiCongHien;
+  thayDoiCongHienTongMon(-phiCongHien);
   state.congPhapDaHoc.push(cpId);
   trangBiCongPhapHoacBiThuat(cpId);
 }
@@ -3519,6 +4292,53 @@ function kiemTraNoNhanQua(epChay = false) {
     return true;
   }
 
+  if (hat.loai === 'truy_na_tong_mon') {
+    const cgDich = Math.min(9, Math.max(state.canhGioi, hat.canhGioi || state.canhGioi));
+    const cgDef = layCanhGioiDef(cgDich);
+    state.suKienHienTai = {
+      id: `sk_nq_${hat.id}`,
+      bienCo: 'nhan_qua',
+      ten: `⚖️ Chấp Pháp Truy Nã: 【${tenDt}】 chặn đường`,
+      text: `Ngoài địa giới 【${vung.ten}】, mấy bóng áo bào sư môn cũ hạ xuống chặn trước mặt bạn. Đệ tử Chấp Pháp Đường của 【${tenDt}】 giơ lệnh bài truy nã phản đồ: "Tự tiện phản môn bỏ trốn, theo môn quy hôm nay phải thanh lý!"`,
+      choices: [
+        {
+          text: `Rút pháp bảo nghênh chiến Chấp Pháp Đường`,
+          effects: [
+            {
+              combat: {
+                ten: `Chấp Pháp Đệ Tử · ${tenDt}`,
+                hp: Math.round(cgDef.hpGoc * 1.25),
+                congKich: Math.round(cgDef.congKichGoc * 1.15),
+                phongThu: Math.round(cgDef.phongThuGoc * 1.1),
+                linhThach: Math.round(ltThuong * 1.1),
+                canhGioiDich: cgDich,
+                giuNguyenChiSo: true
+              }
+            }
+          ]
+        },
+        {
+          text: `Nộp ${Math.round(ltThuong * 1.4).toLocaleString()} LT xin hòa giải xóa sổ truy nã`,
+          requires: { linhThach: Math.round(ltThuong * 1.4) },
+          effects: [
+            {
+              theLucDelta: hat.tmId ? { tmId: hat.tmId, delta: 12 } : null,
+              log: `💰 Bạn nộp linh thạch bồi thường cho Chấp Pháp Đường 【${tenDt}】, lệnh truy nã được thu hồi!`
+            }
+          ]
+        },
+        {
+          text: `Thi triển độn thuật liều mạng thoát thân`,
+          check: { chiSo: 'khiVan', doKho: 18 },
+          success: [{ log: `💨 Bạn vượt qua vòng vây Chấp Pháp Đường 【${tenDt}】 trong gang tấc!` }],
+          failure: [{ hp: -40, thuongThe: 1, log: `💥 Bị trận kỳ Chấp Pháp Đường quét trúng khi tháo chạy, thương thế gia tăng!` }]
+        }
+      ]
+    };
+    ghiNhatKy(`⚖️ Chấp Pháp Đường của 【${tenDt}】 lần tới truy nã tại ${vung.ten}!`, 'nguy_hiem');
+    return true;
+  }
+
   // 'co_duyen'
   const thaoPool = (window.PN_DATA.vatPham || []).filter(v => ['linh_thao', 'dan', 'phu_luc'].includes(v.loai) && (v.canhGioi ?? 0) <= state.canhGioi + 1);
   const vatQuy = pickRandom(thaoPool);
@@ -3748,6 +4568,9 @@ function kiemTraDieuKienLuaChon(lc) {
   if (req.linhThach && state.linhThach < req.linhThach) {
     return { du: false, nhan: `Thiếu ${req.linhThach.toLocaleString()} Linh thạch` };
   }
+  if (req.congHien && (!state.tongMon || state.tongMon.congHien < req.congHien)) {
+    return { du: false, nhan: `Thiếu ${req.congHien} Cống hiến` };
+  }
   if (req.itemId && soLuongVat(req.itemId) <= 0) {
     const vp = layVatPhamDef(req.itemId);
     return { du: false, nhan: `Cần: ${req.tenYeuCau || (vp ? vp.ten : req.itemId)}` };
@@ -3774,6 +4597,9 @@ function kiemTraDieuKienLuaChon(lc) {
   if (req.linhThach) {
     return { du: true, nhan: `Tiêu ${req.linhThach.toLocaleString()} LT` };
   }
+  if (req.congHien) {
+    return { du: true, nhan: `Nộp ${req.congHien} Cống hiến` };
+  }
   return { du: true, nhan: '' };
 }
 
@@ -3781,6 +4607,7 @@ function tieuHaoDieuKienLuaChon(lc) {
   const req = lc && lc.requires;
   if (!req) return;
   if (req.linhThach) state.linhThach = Math.max(0, state.linhThach - req.linhThach);
+  if (req.congHien && state.tongMon) thayDoiCongHienTongMon(-req.congHien);
   if (req.itemId && !req.khongTieuHao) themVat(req.itemId, -1);
   if (req.itemLoai && !req.khongTieuHao) {
     const vp = timVatPhamTheoLoai(req.itemLoai);
@@ -3870,6 +4697,12 @@ function thucThiHieuUng(dsHieuUng, baseCg = state.canhGioi) {
     if (ef.theLucDelta && ef.theLucDelta.tmId) {
       thayDoiHaoCamTheLuc(ef.theLucDelta.tmId, Number(ef.theLucDelta.delta) || 0);
     }
+    if (ef.congHien) {
+      thayDoiCongHienTongMon(Number(ef.congHien) || 0);
+    }
+    if (ef.roiTongMonKieu) {
+      roiTongMon(ef.roiTongMonKieu);
+    }
     if (ef.combat) {
       const cb = { ...ef.combat };
       if (!cb.giuNguyenChiSo) {
@@ -3878,6 +4711,7 @@ function thucThiHieuUng(dsHieuUng, baseCg = state.canhGioi) {
         cb.phongThu = scaleGiaTriTheoCanhGioi(cb.phongThu || 10, baseCg);
         cb.linhThach = scaleGiaTriTheoCanhGioi(cb.linhThach || 50, baseCg);
       }
+      if (cb.hpMult && cb.hp) cb.hp = Math.max(10, Math.round(cb.hp * cb.hpMult));
       cb.canhGioiDich = typeof cb.canhGioiDich === 'number' ? cb.canhGioiDich : typeof cb.canhGioi === 'number' ? cb.canhGioi : baseCg;
       batDauChienDau(cb);
     }
@@ -4020,6 +4854,11 @@ function batDauChienDau(dich) {
     canhGioiDich: suyDoanCanhGioiDich(dich),
     tuBiCanh: !!dich.tuBiCanh,
     laBossBiCanh: !!dich.laBossBiCanh,
+    tongMonQuestId: dich.tongMonQuestId || null,
+    khaoHachCapBac: dich.khaoHachCapBac || 0,
+    dongMinhNpcId: dich.dongMinhNpcId || null,
+    dongMinhTen: dich.dongMinhTen || '',
+    linhDienSuMon: dich.linhDienSuMon || null,
     hiep: 1,
     cooldowns: {},
     trangThaiDich: {},
@@ -4051,9 +4890,14 @@ function hanhDongChienDau(kieu) {
     if (Math.random() < tiLeChay) {
       ghiNhatKy(`💨 Bạn kích hoạt ${nhanPhu}độn thuật thoát khỏi tay [${t.ten}]!`, 'canh_bao');
       const laBiCanh = !!t.tuBiCanh;
+      const khaoHachCap = t.khaoHachCapBac || 0;
       const tenDichThoat = t.ten;
       state.tranHienTai = null;
       capNhatThuongTheSauTran(tenDichThoat);
+      if (khaoHachCap > 0 && state.tongMon) {
+        state.tongMon.namKhaoHachLai = state.nam + 1;
+        ghiNhatKy(`⚔️ Khảo hạch tấn thăng thất bại, hãy tu luyện thêm và thi lại từ Năm ${state.tongMon.namKhaoHachLai}!`, 'canh_bao');
+      }
       if (laBiCanh && state.biCanhHienTai) hoanThanhBiCanh(true);
     } else {
       const kqTruy = tinhSatThuong(t.congKich, tinhPhongThu(), 0.85, 0.05, 0, 0.1);
@@ -4209,6 +5053,13 @@ function hanhDongChienDau(kieu) {
   }
 
   if (satThuongTa > 0) t.hpDich = Math.max(0, t.hpDich - satThuongTa);
+
+  // Đồng minh sư môn / đạo hữu trợ chiến (nếu đi cùng trong nhiệm vụ tông môn)
+  if (t.hpDich > 0 && t.dongMinhNpcId) {
+    const dmDmg = Math.max(4, Math.round(atkTa * (0.28 + Math.random() * 0.12)));
+    t.hpDich = Math.max(0, t.hpDich - dmDmg);
+    t.logTran.push(`🤝 Đồng minh 【${t.dongMinhTen || 'Đạo hữu'}】 phối hợp công kích, gây thêm ${dmDmg.toLocaleString()} sát thương!`);
+  }
 
   // Rút máu theo lượt trên địch (Trúng độc / Xuất huyết / Thiêu đốt)
   if (t.hpDich > 0) {
@@ -4558,9 +5409,24 @@ function kiemTraKetThucTran() {
     ghiNhatKy(`🏆 Chiến thắng 【${t.ten}】! Chiến lợi phẩm: ${chuoiLoot}.`, 'tot');
     const laBiCanh = !!t.tuBiCanh;
     const laBossBc = !!t.laBossBiCanh;
+    const tongMonQuestId = t.tongMonQuestId || null;
+    const dongMinhNpcId = t.dongMinhNpcId || null;
+    const khaoHachCapBac = t.khaoHachCapBac || 0;
+    const linhDienSuMon = t.linhDienSuMon || null;
     const tenDichThang = t.ten;
     state.tranHienTai = null;
     capNhatThuongTheSauTran(tenDichThang);
+    if (tongMonQuestId) {
+      hoanThanhNhiemVuTongMon(tongMonQuestId, dongMinhNpcId);
+    }
+    if (khaoHachCapBac > 0) {
+      hoanThanhKhaoHachTongMon(khaoHachCapBac);
+    }
+    if (linhDienSuMon && state.tongMon) {
+      thayDoiCongHienTongMon(linhDienSuMon.congHien || 15);
+      const hcMoi = thayDoiHaoCamTheLuc(linhDienSuMon.tmId || state.tongMon.id, 3);
+      ghiNhatKy(`🌾 Đánh đuổi kẻ xâm phạm Linh Điền sư môn: thưởng thêm +${linhDienSuMon.congHien || 15} Cống hiến, +3 Hảo cảm (${hcMoi}/100)!`, 'dai_cat');
+    }
     if (laBiCanh && state.biCanhHienTai) {
       state.biCanhHienTai.thuHoach.push(`+${t.linhThach.toLocaleString()} LT`);
       if (t.loot && layVatPhamDef(t.loot)) state.biCanhHienTai.thuHoach.push(layVatPhamDef(t.loot).ten);
@@ -5521,50 +6387,218 @@ function veCotPhai() {
         ${tabBody}`;
     }
 
-    // Sub-tab 2: TÔNG MÔN / THẾ LỰC
+    // Sub-tab 2: TÔNG MÔN / THẾ LỰC (Tác giả: Gemini (Antigravity))
     else if (diaDiemSubTab === 'tong_mon') {
-      const curTm = state.tongMon ? layTongMonDef(state.tongMon.id) : null;
-      const cv = state.tongMon ? TONG_MON_CHUC_VI[state.tongMon.capBac] : null;
+      const tmState = state.tongMon ? damBaoDuLieuTongMon() : null;
+      const curTm = tmState ? layTongMonDef(tmState.id) : null;
+      const cv = tmState ? TONG_MON_CHUC_VI[tmState.capBac] || TONG_MON_CHUC_VI[0] : null;
+      const nextCv = tmState && tmState.capBac + 1 < TONG_MON_CHUC_VI.length ? TONG_MON_CHUC_VI[tmState.capBac + 1] : null;
       const hcCurTm = curTm ? layHaoCamTheLuc(curTm.id) : 0;
       const q = uiFilter.tmQuery.trim().toLowerCase();
       const listTm = window.PN_DATA.tongMon
         .filter(t => (uiFilter.tmScope === 'vung' ? t.vungId === state.vungHienTai : true))
         .filter(t => !q || t.ten.toLowerCase().includes(q) || (t.phe || '').toLowerCase().includes(q));
 
-      bodyHtml = `
-        ${
-          curTm
-            ? `<div class="sub-section">
-                <div class="sub-title">🏛️ Sư Môn Hiện Tại: ${curTm.ten} (${curTm.phe})</div>
-                <div class="card-row" style="display:block">
-                  <div>Chức vị: <b class="hl-realm">${cv.ten}</b> · Cống hiến: <b class="hl-gold">${state.tongMon.congHien}</b> · Hảo cảm thế lực: <b>${capBacTheLuc(hcCurTm)} (${hcCurTm}/100)</b></div>
-                  <div class="muted" style="margin:4px 0">${curTm.moTa}</div>
-                  <div class="row-actions" style="margin-top:8px">
-                    <button class="btn btn-sm btn-primary" onclick="lamNhiemVuTongMon()">📜 Làm tông vụ (3 tháng)</button>
-                    <button class="btn btn-sm" onclick="nhanBongLocTongMon()">💎 Lĩnh bổng lộc</button>
-                    <button class="btn btn-sm" onclick="thangCapTongMon()">🎖️ Tấn thăng chức vị</button>
-                    <button class="btn btn-sm btn-danger" onclick="roiTongMon()">🚪 Rời môn</button>
+      let suMonHtml = '';
+      if (curTm && tmState) {
+        const tmSub = uiFilter.tmSubTab || 'nhiem_vu';
+        const namTichBong = Math.min(cv.tichToiDaNam, Math.max(0, (state.nam || 1) - (tmState.namBongLoc ?? state.nam)));
+        let subContent = '';
+
+        if (tmSub === 'nhiem_vu') {
+          const dsNhan = tmState.viecNhan || [];
+          const dsBang = tmState.bangViec || [];
+          const don = tmState.donCuaTong;
+          const coTrongTui = don ? soLuongVat(don.id) : 0;
+          const kyConLai = TONG_MON_KY_NAM - ((Math.max(1, state.nam) - 1) % TONG_MON_KY_NAM);
+
+          subContent = `
+            <div class="sub-title" style="margin-top:8px">📌 Nhiệm Vụ Đang Nhận (${dsNhan.length}/${MAX_NHIEM_VU_TONG_MON})</div>
+            ${
+              dsNhan.length === 0
+                ? '<div class="muted">Chưa nhận ngọc giản nhiệm vụ nào. Hãy chọn từ Bảng Ngọc Giản bên dưới.</div>'
+                : dsNhan
+                    .map(nv => {
+                      const conNam = Math.max(0, nv.hetHanNam - state.nam);
+                      return `<div class="card-row">
+                        <div>
+                          <b>${escapeHtml(nv.ten)}</b> <span class="badge">${layCanhGioiDef(nv.canhGioiDich).ten}</span>
+                          <span class="badge">📍 ${escapeHtml(nv.vungTen)}</span>
+                          <span class="badge ${conNam <= 1 ? 'hl-danger' : ''}">Hạn: Năm ${nv.hetHanNam} (còn ${conNam} năm)</span>
+                          <div class="muted">Thưởng: +${nv.congHien} CH · +${nv.linhThach.toLocaleString()} LT · +4 Hảo cảm</div>
+                        </div>
+                        <div class="row-actions">
+                          <button class="btn btn-sm btn-primary" onclick="thucHienNhiemVuTongMon('${nv.id}')">⚔️ Thực hiện</button>
+                          <button class="btn btn-sm btn-danger" onclick="boNhiemVuTongMon('${nv.id}')">✖ Bỏ (-20% CH)</button>
+                        </div>
+                      </div>`;
+                    })
+                    .join('')
+            }
+
+            <div class="sub-title" style="margin-top:10px">📜 Bảng Ngọc Giản Tông Môn (Làm mới sau ${kyConLai} năm)</div>
+            ${
+              dsBang.length === 0
+                ? '<div class="muted">Bảng ngọc giản kỳ này đã được nhận hết, chờ sang kỳ mới!</div>'
+                : dsBang
+                    .map(
+                      nv => `<div class="card-row">
+                        <div>
+                          <b>${escapeHtml(nv.ten)}</b> <span class="badge">${layCanhGioiDef(nv.canhGioiDich).ten}</span>
+                          <span class="badge">📍 ${escapeHtml(nv.vungTen)}</span>
+                          <div class="muted">Hạn ${nv.hanNam} năm · Thưởng: +${nv.congHien} CH · +${nv.linhThach.toLocaleString()} LT</div>
+                        </div>
+                        <button class="btn btn-sm btn-primary" onclick="nhanNhiemVuTongMon('${nv.id}')">📥 Nhận việc</button>
+                      </div>`
+                    )
+                    .join('')
+            }
+
+            <div class="sub-title" style="margin-top:10px">🏯 Việc Thường Trực Trong Tông</div>
+            <div class="card-row">
+              <div>
+                <b>🌾 Trấn thủ Linh Điền Sư Môn (12 tháng)</b>
+                <div class="muted">Tu luyện x1.0 tại tông + Cống hiến; 45% đụng kẻ trộm linh thảo thưởng thêm CH.</div>
+              </div>
+              <button class="btn btn-sm btn-primary" onclick="lamViecThuongTrucTongMon('tran_thu_linh_dien')">Thực hiện</button>
+            </div>
+            ${
+              tmState.capBac <= 1
+                ? `<div class="card-row">
+                    <div><b>🧹 Quét dọn Tàng Kinh Các (6 tháng)</b><div class="muted">+8 CH · 25% Tu vi năm · 35% ngộ tâm đắc (+1 Ngộ tính, mỗi 3 năm).</div></div>
+                    <button class="btn btn-sm" onclick="lamViecThuongTrucTongMon('quet_tang_kinh_cac')">Làm (6T)</button>
                   </div>
-                </div>
-                ${
-                  (curTm.congPhapIds || []).length > 0
-                    ? `<div class="sub-title" style="margin-top:10px">📘 Tàng Kinh Các Trấn Phái${hcCurTm >= 50 ? ' <span class="hl-green">(Giảm 10% Cống hiến nhờ Khách khanh)</span>' : ''}</div>` +
-                      curTm.congPhapIds
-                        .map(cid => {
-                          const cp = layCongPhapDef(cid);
-                          const daHoc = state.congPhapDaHoc.includes(cid);
-                          const phi = phiDoiBaoKhoTongMon(cp, curTm.id);
-                          return `<div class="card-row">
-                            <div><b>[${cp.loai === 'BI_THUAT' ? 'Bí thuật' : 'Công pháp'}] ${cp.ten}</b> <span class="badge">${layCanhGioiDef(cp.canhGioi).ten}</span><div class="hl-realm">${moTaCongPhapNgan(cp)}</div><div class="muted">${cp.moTa}</div></div>
-                            ${daHoc ? '<span class="hl-green">Đã học</span>' : `<button class="btn btn-sm btn-primary" onclick="doiBaoKhoTongMon('${cid}')">Đổi (${phi} CH)</button>`}
-                          </div>`;
-                        })
-                        .join('')
-                    : ''
-                }
-              </div>`
-            : ''
+                  <div class="card-row">
+                    <div><b>🪣 Gánh nước Linh Tuyền (6 tháng)</b><div class="muted">+8 CH · 25% Tu vi năm · 35% tôi luyện (+1 Căn cốt, mỗi 3 năm).</div></div>
+                    <button class="btn btn-sm" onclick="lamViecThuongTrucTongMon('ganh_nuoc_linh_tuyen')">Làm (6T)</button>
+                  </div>
+                  <div class="card-row">
+                    <div><b>⚗️ Phụ việc Đan Phòng / Khí Đường (6 tháng)</b><div class="muted">+7 CH · 25% Tu vi năm · 55% được sư huynh thưởng đan dược/linh thảo.</div></div>
+                    <button class="btn btn-sm" onclick="lamViecThuongTrucTongMon('phu_viec_dan_khi')">Làm (6T)</button>
+                  </div>`
+                : '<div class="muted" style="margin-top:4px">Từ Nội Môn trở lên không cần làm việc tạp dịch Ký danh/Ngoại môn.</div>'
+            }
+
+            ${
+              don
+                ? `<div class="sub-title" style="margin-top:10px">📦 Đơn Thu Mua Của Tông (Kỳ 3 năm)</div>
+                  <div class="card-row">
+                    <div>
+                      <b>Cần nộp: ${escapeHtml(don.ten)} x${don.soLuong}</b> <span class="badge">Đang có: ${coTrongTui}/${don.soLuong}</span>
+                      <div class="muted">Thưởng: +${don.congHien} Cống hiến, +3 Hảo cảm thế lực</div>
+                    </div>
+                    ${
+                      tmState.donDaGiao
+                        ? '<span class="hl-green">Đã hoàn thành kỳ này</span>'
+                        : `<button class="btn btn-sm btn-primary" onclick="giaoDonCuaTong()" ${coTrongTui >= don.soLuong ? '' : 'disabled'}>Giao đơn (+${don.congHien} CH)</button>`
+                    }
+                  </div>`
+                : ''
+            }`;
+        } else if (tmSub === 'chap_su') {
+          const quyen1 = Math.max(100, Math.round(100 * Math.pow(2, state.canhGioi || 0)));
+          const quyen2 = quyen1 * 3;
+          const kq1 = tinhCongHienQuyenGop(quyen1);
+          const kq2 = tinhCongHienQuyenGop(quyen2);
+          subContent = `
+            <div class="sub-title" style="margin-top:8px">🏛️ Chấp Sự Đường & Tấn Thăng</div>
+            <div class="card-row" style="display:block">
+              <div>Bổng lộc tích lũy: <b>${namTichBong} năm</b> (tối đa ${cv.tichToiDaNam} năm · +${cv.bongLoc.toLocaleString()} LT & +${cv.bongCh} CH/năm cơ bản)</div>
+              <div class="muted" style="margin:4px 0">${
+                nextCv
+                  ? `Mốc kế tiếp <b>${nextCv.ten}</b>: cần Công tích ≥ ${nextCv.yeuCauCongHien} (đang có ${tmState.congTich}) & cảnh giới 【${layCanhGioiDef(nextCv.yeuCauCg).ten}】${tmState.capBac + 1 >= 2 ? ' + vượt Khảo hạch Lôi đài' : ''}.`
+                  : 'Bạn đã đạt chức vị cao nhất trong tông môn!'
+              }</div>
+              <div class="row-actions" style="margin-top:8px">
+                <button class="btn btn-sm btn-primary" onclick="nhanBongLocTongMon()" ${namTichBong > 0 ? '' : 'disabled'}>💎 Lĩnh bổng lộc (${namTichBong} năm)</button>
+                ${nextCv ? `<button class="btn btn-sm" onclick="thangCapTongMon()">🎖️ ${tmState.capBac + 1 >= 2 ? 'Khảo hạch tấn thăng' : 'Tấn thăng chức vị'}</button>` : ''}
+                <button class="btn btn-sm btn-danger" onclick="moModalRoiTongMon()">🚪 Bàn chuyện rời tông</button>
+              </div>
+            </div>
+
+            <div class="sub-title" style="margin-top:10px">🏔️ Linh Mạch Sư Môn</div>
+            <div class="card-row">
+              <div>
+                <b>Động tu luyện Linh Mạch (${cv.ten})</b>
+                <div class="muted">${
+                  tmState.capBac >= 1
+                    ? `Hệ số linh khí sư môn x${(1 + cv.linhMachHeSo).toFixed(2)} · Phí ${cv.phiLinhMachNam} CH/năm · An toàn không gặp biến cố.`
+                    : 'Cần đạt chức vị Đệ Tử Ngoại Môn trở lên mới mở khóa Linh Mạch Sư Môn.'
+                }</div>
+              </div>
+              <div class="row-actions">
+                <button class="btn btn-sm btn-primary" onclick="beQuanLinhMachTongMon(1)" ${tmState.capBac >= 1 ? '' : 'disabled'}>1 năm (${cv.phiLinhMachNam} CH)</button>
+                <button class="btn btn-sm" onclick="beQuanLinhMachTongMon(3)" ${tmState.capBac >= 1 ? '' : 'disabled'}>3 năm (${cv.phiLinhMachNam * 3} CH)</button>
+              </div>
+            </div>
+
+            <div class="sub-title" style="margin-top:10px">💠 Cúng Dường / Quyên Linh Thạch</div>
+            <div class="card-row">
+              <div>
+                <b>Quyên Linh Thạch đổi Cống hiến</b>
+                <div class="muted">Đã quyên năm ${state.nam}: ${(tmState.namQuyen === state.nam ? tmState.ltDaQuyenNam : 0).toLocaleString()} LT (Hiệu suất giảm 20% mỗi mốc ${kq1.block.toLocaleString()} LT/năm).</div>
+              </div>
+              <div class="row-actions">
+                <button class="btn btn-sm" onclick="quyenLinhThachTongMon(${quyen1})">${quyen1.toLocaleString()} LT (+${kq1.ch} CH)</button>
+                <button class="btn btn-sm" onclick="quyenLinhThachTongMon(${quyen2})">${quyen2.toLocaleString()} LT (+${kq2.ch} CH)</button>
+              </div>
+            </div>`;
+        } else {
+          const dsBaoKho = layDsBaoKhoVatTu();
+          const giamChucViPct = Math.round((1 - (cv.giamGiaBaoKho || 1)) * 100);
+          const discountTags = [
+            giamChucViPct > 0 ? `Giảm ${giamChucViPct}% chức vị` : '',
+            hcCurTm >= 50 ? 'Giảm 10% Khách khanh' : ''
+          ].filter(Boolean);
+          const discountNote = discountTags.length > 0 ? ` <span class="hl-green">(${discountTags.join(' + ')})</span>` : '';
+
+          subContent = `
+            ${
+              (curTm.congPhapIds || []).length > 0
+                ? `<div class="sub-title" style="margin-top:8px">📘 Tàng Kinh Các Trấn Phái${discountNote}</div>` +
+                  curTm.congPhapIds
+                    .map(cid => {
+                      const cp = layCongPhapDef(cid);
+                      const daHoc = state.congPhapDaHoc.includes(cid);
+                      const phi = phiDoiBaoKhoTongMon(cp, curTm.id);
+                      return `<div class="card-row">
+                        <div><b>[${cp.loai === 'BI_THUAT' ? 'Bí thuật' : 'Công pháp'}] ${cp.ten}</b> <span class="badge">${layCanhGioiDef(cp.canhGioi).ten}</span><div class="hl-realm">${moTaCongPhapNgan(cp)}</div><div class="muted">${cp.moTa}</div></div>
+                        ${daHoc ? '<span class="hl-green">Đã học</span>' : `<button class="btn btn-sm btn-primary" onclick="doiBaoKhoTongMon('${cid}')">Đổi (${phi} CH)</button>`}
+                      </div>`;
+                    })
+                    .join('')
+                : ''
+            }
+            <div class="sub-title" style="margin-top:10px">🏮 Bảo Khố Vật Tư${discountNote}</div>
+            ${dsBaoKho
+              .map(vp => {
+                const phi = phiDoiVatTuBaoKho(vp, curTm.id);
+                return `<div class="card-row">
+                  <div><b>${escapeHtml(vp.ten)}</b> <span class="badge">${layCanhGioiDef(vp.canhGioi ?? 0).ten}</span><div class="muted">${escapeHtml(vp.moTa || '')}</div></div>
+                  <button class="btn btn-sm btn-primary" onclick="doiVatTuBaoKho('${vp.id}')">Đổi (${phi} CH)</button>
+                </div>`;
+              })
+              .join('')}`;
         }
+
+        suMonHtml = `
+          <div class="sub-section">
+            <div class="sub-title">🏛️ Sư Môn Hiện Tại: ${curTm.ten} (${curTm.phe})</div>
+            <div class="card-row" style="display:block">
+              <div>Chức vị: <b class="hl-realm">${cv.ten}</b> · Cống hiến: <b class="hl-gold">${tmState.congHien}</b> · Công tích: <b>${tmState.congTich}</b>${nextCv ? `/${nextCv.yeuCauCongHien}` : ' (Tối đa)'} · Hảo cảm: <b>${capBacTheLuc(hcCurTm)} (${hcCurTm}/100)</b></div>
+              <div class="muted" style="margin:4px 0">${curTm.moTa}</div>
+              <div class="filter-bar" style="margin-top:8px;margin-bottom:0">
+                <button class="btn btn-sm ${tmSub === 'nhiem_vu' ? 'btn-primary' : ''}" onclick="uiFilter.tmSubTab='nhiem_vu'; veCotPhai()">📜 Điện Nhiệm Vụ (${(tmState.viecNhan || []).length}/${MAX_NHIEM_VU_TONG_MON})</button>
+                <button class="btn btn-sm ${tmSub === 'chap_su' ? 'btn-primary' : ''}" onclick="uiFilter.tmSubTab='chap_su'; veCotPhai()">🏛️ Chấp Sự & Linh Mạch</button>
+                <button class="btn btn-sm ${tmSub === 'bao_kho' ? 'btn-primary' : ''}" onclick="uiFilter.tmSubTab='bao_kho'; veCotPhai()">📘 Tàng Kinh & Bảo Khố</button>
+              </div>
+            </div>
+            ${subContent}
+          </div>`;
+      }
+
+      bodyHtml = `
+        ${suMonHtml}
         <div class="sub-title">🏯 Tông Môn & Thế Lực (${listTm.length})</div>
         <div class="filter-bar">
           <input id="filter-tm" type="text" placeholder="Tìm tên tông môn / phe..." value="${escapeHtml(uiFilter.tmQuery)}" oninput="uiFilter.tmQuery=this.value; veCotPhai()" />
