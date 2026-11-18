@@ -76,7 +76,7 @@ window.PN_DATA = {
         "Đỉnh Phong"
       ],
       "tuViCan": [
-        4500,
+        3200,
         6500,
         9500,
         13500

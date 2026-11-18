@@ -395,8 +395,8 @@
   function fxHtml(e) {
     var h = "";
     if (e.lt) h += '<span class="' + (e.lt > 0 ? "lt" : "dn") + '">' + (e.lt > 0 ? "+" : "") + e.lt + " LT</span>";
-    if (e.tv) h += '<span class="up">+' + e.tv + " tu vi</span>";
-    if (e.hp) h += '<span class="up">+' + e.hp + " Khí huyết</span>";
+    if (e.tv) h += '<span class="up">+' + Number(e.tv).toLocaleString("vi-VN") + " tu vi</span>";
+    if (e.hp) h += '<span class="up">+' + Number(e.hp).toLocaleString("vi-VN") + " Khí huyết</span>";
     if (e.tho) h += '<span class="dn">−' + e.tho + (hasReadyAdapter() ? " năm tổn thọ" : " năm thọ") + "</span>";
     if (e.mo) h += '<span class="dn">+' + e.mo + " tháng</span>";
     if (e.itemTen || e.item) h += '<span class="it">✦ ' + esc(e.itemTen || e.item) + '</span>';

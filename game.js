@@ -24,6 +24,9 @@ const uiFilter = {
   tmSubTab: 'nhiem_vu', // 'nhiem_vu' | 'chap_su' | 'bao_kho'
   nhaQuery: '',
   mapQuery: '',
+  mapOnlySuitable: false,
+  mapOnlyMarket: false,
+  mapCg: -1,
   bagQuery: ''
 };
 
@@ -381,6 +384,7 @@ function taoKiepMoi(opts = {}) {
       targetNpc.haoCamRaw = diem;
       targetNpc.haoCam = diem;
       targetNpc.namTuongTacCuoi = 1;
+      targetNpc.giuHaoCamKhoiDau = true; // v1.1: nhân duyên tiền định không phai cho tới lần gặp đầu
       if (qh.lyDo) {
         targetNpc.kyUc = targetNpc.kyUc || [];
         targetNpc.kyUc.push(`Năm 1: ${qh.lyDo}`);
@@ -431,6 +435,12 @@ function taoKiepMoi(opts = {}) {
     linhThach: xtDef.linhThach || 30,
     thoNguyenBonus: tcDef.thoNguyenBonus || 0,
     dotPhaBuff: 0,
+    // v1.2: thâm niên công pháp & Kho Động Phủ
+    namDoiCongPhap: 1,
+    khoDo: {},
+    // v1.3: Bản mệnh pháp bảo & Tâm ma
+    banMenh: { key: null, cap: 0 },
+    tamMaNam: 0,
     ketThuc: null,
     chiSo,
 
@@ -490,6 +500,7 @@ function taoKiepMoi(opts = {}) {
 function luuGame() {
   if (!state) return;
   try {
+    state.tsLuu = Date.now();
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));
   } catch (e) {
     console.warn('Không thể lưu game:', e);
@@ -505,6 +516,12 @@ function taiGame() {
       state = parsed;
       if (!Array.isArray(state.biThuat)) state.biThuat = [];
       if (typeof state.dotPhaBuff !== 'number') state.dotPhaBuff = 0;
+      // v1.2: tương thích save cũ
+      if (!state.khoDo || typeof state.khoDo !== 'object') state.khoDo = {};
+      if (typeof state.namDoiCongPhap !== 'number') state.namDoiCongPhap = 1;
+      // v1.3: Bản mệnh pháp bảo & Tâm ma
+      if (!state.banMenh || typeof state.banMenh !== 'object') state.banMenh = { key: null, cap: 0 };
+      if (typeof state.tamMaNam !== 'number') state.tamMaNam = 0;
       if (typeof state.tuiDoMaxO !== 'number') state.tuiDoMaxO = 10;
       if (!state.duocKhang || typeof state.duocKhang !== 'object') state.duocKhang = {};
       if (typeof state.thuongThe !== 'number' || state.thuongThe < 0) state.thuongThe = 0;
@@ -614,6 +631,13 @@ function layCanhGioiPhapBao(pb) {
   return 0;
 }
 
+// v1.8: chỉ Thông Thiên chân chính (cg >= 8) mới miễn giảm trừ vượt cảnh giới
+function canhGioiToiDaHieuLucPhapBao(pb) {
+  if (!pb) return null;
+  const cg = layCanhGioiPhapBao(pb);
+  return /Thông Thiên Linh Bảo/i.test(pb.phanCap || '') && cg >= 8 ? 9 : null;
+}
+
 // Bảng quy đổi hiệu ứng nội tại cho Công pháp & Bí thuật (Tác giả: Gemini (Antigravity))
 const BI_THUAT_PASSIVE_MAP = {
   TAN_CONG: { congKichPct: 0.06, baoKichPct: 0.02, nhan: 'Sát phạt' },
@@ -644,6 +668,7 @@ function phanTichThuocTinhCongPhap(c, apDungGiamTru = true) {
     canCot: 0,
     khiVan: 0,
     thoNguyenBonus: 0,
+    linhLucVanHanh: 0,
     kyNangChuDong: []
   };
   if (!c) return r;
@@ -668,6 +693,7 @@ function phanTichThuocTinhCongPhap(c, apDungGiamTru = true) {
   }
   if (Number(cs.linhLucVanHanh) > 0) {
     const llvh = Number(cs.linhLucVanHanh);
+    r.linhLucVanHanh += llvh;
     r.congKichPct += Math.round(llvh * 4) / 100;
     r.linhLucPct += Math.round(llvh * 10) / 100;
     r.hoiMpPct += Math.min(0.06, Math.round(llvh * 1.5) / 100);
@@ -775,6 +801,7 @@ function tinhCongPhapTongHop() {
     canCot: 0,
     khiVan: 0,
     thoNguyenBonus: 0,
+    linhLucVanHanh: 0,
     kyNangChuDong: []
   };
 
@@ -798,6 +825,7 @@ function tinhCongPhapTongHop() {
     out.canCot += p.canCot;
     out.khiVan += p.khiVan;
     out.thoNguyenBonus += p.thoNguyenBonus;
+    out.linhLucVanHanh += p.linhLucVanHanh || 0;
     out.kyNangChuDong.push(...p.kyNangChuDong);
   }
   return out;
@@ -822,13 +850,19 @@ function tinhThoNguyenMax() {
   );
 }
 
+// v1.5: Từ điều (affix) Bản Mệnh Pháp Bảo — chỉ áp dụng khi pháp bảo đang liên kết
+function v15AffixBanMenh(loai) {
+  if (!state || !state.banMenh || state.banMenh.key !== state.phapBao || !Array.isArray(state.banMenh.affixes)) return 0;
+  return state.banMenh.affixes.filter(a => a && a.loai === loai).reduce((s, a) => s + (Number(a.pct) || 0), 0);
+}
+
 function tinhHpMax() {
   const def = layCanhGioiDef();
   const cpSum = tinhCongPhapTongHop();
   const tc = layTheChatDef();
   const heSoTieu = 1 + state.tieuCanh * 0.18;
   const goc = def.hpGoc * heSoTieu + (state.chiSo.canCot + cpSum.canCot) * (8 + Math.pow(2.3, state.canhGioi) * 5);
-  return Math.max(50, Math.round(goc * Math.max(0.5, 1 + cpSum.hpPct + (tc.hpBonus || 0))));
+  return Math.max(50, Math.round(goc * Math.max(0.5, 1 + cpSum.hpPct + (tc.hpBonus || 0) + v15AffixBanMenh('hp'))));
 }
 
 // Linh lực (MP) tối đa & tiêu hao khi thi triển chiêu thức (Tác giả: Gemini (Antigravity))
@@ -838,7 +872,7 @@ function tinhMpMax() {
   const tc = layTheChatDef();
   const heSoTieu = 1 + state.tieuCanh * 0.16;
   const goc = Math.round(def.hpGoc * 0.65) * heSoTieu + (state.chiSo.thanThuc + cpSum.thanThuc) * (6 + Math.pow(2.2, state.canhGioi) * 4);
-  return Math.max(40, Math.round(goc * Math.max(0.6, 1 + (cpSum.linhLucPct || 0) + (tc.tocDoBonus || 0) * 0.5)));
+  return Math.max(40, Math.round(goc * Math.max(0.6, 1 + (cpSum.linhLucPct || 0) + (tc.tocDoBonus || 0) * 0.5 + v15AffixBanMenh('mp'))));
 }
 
 function tinhTieuHaoLinhLucPct(kn) {
@@ -970,6 +1004,8 @@ function moTaCongPhapNgan(cp) {
   if (p.phongThuPct > 0) parts.push(`Thủ +${Math.round(p.phongThuPct * 100)}%`);
   if (p.hpPct > 0) parts.push(`HP +${Math.round(p.hpPct * 100)}%`);
   if (p.linhLucPct > 0) parts.push(`Linh lực +${Math.round(p.linhLucPct * 100)}%`);
+  if (p.linhLucVanHanh > 0) parts.push(`Vận hành linh lực ${Math.round(p.linhLucVanHanh * 10) / 10}`);
+  if (p.hoiMpPct > 0) parts.push(`Hồi Linh lực +${Math.round(p.hoiMpPct * 100)}%`);
   if (p.hoiPhucPct > 0) parts.push(`Hồi phục +${Math.round(p.hoiPhucPct * 100)}%`);
   if (p.baoKichPct > 0) parts.push(`Bạo +${Math.round(p.baoKichPct * 100)}%`);
   if (p.neTranhPct > 0) parts.push(`Né +${Math.round(p.neTranhPct * 100)}%`);
@@ -980,6 +1016,7 @@ function moTaCongPhapNgan(cp) {
   if (p.ngoTinh > 0) parts.push(`Ngộ tính +${p.ngoTinh}`);
   if (p.canCot > 0) parts.push(`Căn cốt +${p.canCot}`);
   if (p.khiVan > 0) parts.push(`Khí vận +${p.khiVan}`);
+  if (p.thoNguyenBonus > 0) parts.push(`Thọ nguyên +${Math.round(p.thoNguyenBonus).toLocaleString('vi-VN')} năm`);
   if (Array.isArray(cp.kyNang) && cp.kyNang.length > 0) {
     parts.push(`Chiêu: ${cp.kyNang.map(moTaKyNangNgan).join('; ')}`);
   }
@@ -1080,19 +1117,29 @@ function moTaVatPhamNgan(vp, itemKey = null) {
     const def = Math.round((Number(vp.phongThu) || 0) * heSo);
     parts.push(`⚔️ Công +${atk.toLocaleString()}`, `🛡️ Thủ +${def.toLocaleString()}`, `Hệ: ${heTxt}`);
     if (state) {
-      const pbGt = tinhHeSoVuotCanh(layCanhGioiPhapBao(vp), /Thông Thiên Linh Bảo/i.test(vp.phanCap || '') ? 9 : null);
+      const pbGt = tinhHeSoVuotCanh(layCanhGioiPhapBao(vp), canhGioiToiDaHieuLucPhapBao(vp));
       if (pbGt.nhan) parts.push(pbGt.nhan);
     }
   } else if (vp.loai === 'dan' && vp.hieuUng) {
     const hu = vp.hieuUng;
     if (hu.hp) parts.push(`❤️ Hồi +${Math.round(Number(hu.hp) * heSo).toLocaleString()} HP`);
+    if (hu.mp) parts.push(`💧 Hồi +${Math.round(Number(hu.mp) * heSo).toLocaleString()} Linh lực`);
     if (hu.tuVi) parts.push(`✨ +${Math.round(Number(hu.tuVi) * heSo).toLocaleString()} Tu vi`);
     if (hu.canCot) parts.push(`💪 +${Math.max(1, Math.round(Number(hu.canCot) * heSo))} Căn cốt`);
     if (hu.bonusDotPha) {
-      const bGoc = Number(hu.bonusDotPha) > 1 ? Number(hu.bonusDotPha) : Math.round(Number(hu.bonusDotPha) * 100);
-      parts.push(`⚡ Đột phá +${Math.round(bGoc * heSo)}%`);
+      if (state && (state.canhGioi || 0) - Number(vp.canhGioi ?? 0) > 1) {
+        parts.push('⚡ Đột phá: đã lỗi thời (không còn hiệu lực)');
+      } else {
+        const bGoc = Number(hu.bonusDotPha) > 1 ? Number(hu.bonusDotPha) : Math.round(Number(hu.bonusDotPha) * 100);
+        const heSoDp = state && (state.canhGioi || 0) - Number(vp.canhGioi ?? 0) === 1 ? 0.7 : 1;
+        parts.push(`⚡ Đột phá +${Math.round(bGoc * heSo * heSoDp)}%${heSoDp < 1 ? ' (đan cũ −30%)' : ''}`);
+      }
     }
     if (hu.thoNguyen) parts.push(`⏳ +${hu.thoNguyen} năm Thọ`);
+    if (state && typeof v161HeSoLechCap === 'function' && (hu.hp || hu.mp || hu.tuVi)) {
+      const hsLech = v161HeSoLechCap(vp);
+      if (hsLech < 0.999) parts.push(`📉 Suy giảm ${Math.round((1 - hsLech) * 100)}% do lệch cảnh giới`);
+    }
     if (state) {
       const vpCg = Number(vp.canhGioi ?? 0);
       if ((state.canhGioi || 0) < vpCg) {
@@ -1114,6 +1161,12 @@ function moTaVatPhamNgan(vp, itemKey = null) {
   return parts.join(' · ');
 }
 
+// v1.3: Bản mệnh pháp bảo — tăng uy lực pháp bảo đang liên kết (Đan Hỏa tôi luyện)
+function v13HeSoBanMenh() {
+  if (typeof state === 'undefined' || !state || !state.banMenh || !state.phapBao) return 1;
+  return state.banMenh.key === state.phapBao ? 1 + 0.08 * (state.banMenh.cap || 0) : 1;
+}
+
 function tinhCongKich() {
   const def = layCanhGioiDef();
   const cpSum = tinhCongPhapTongHop();
@@ -1123,13 +1176,13 @@ function tinhCongKich() {
   const pb = state.phapBao ? layVatPhamDef(state.phapBao) : null;
   const pbCompat = tinhTuongThichPhapBao(pb);
   const pbPcMult = state.phapBao ? layPhamChatVatPham(state.phapBao).heSo : 1;
-  const pbGt = pb ? tinhHeSoVuotCanh(layCanhGioiPhapBao(pb), /Thông Thiên Linh Bảo/i.test(pb.phanCap || '') ? 9 : null) : { heSo: 1 };
+  const pbGt = pb ? tinhHeSoVuotCanh(layCanhGioiPhapBao(pb), canhGioiToiDaHieuLucPhapBao(pb)) : { heSo: 1 };
   const heSoTieu = 1 + state.tieuCanh * 0.16;
   let atk =
     def.congKichGoc * heSoTieu +
-    Math.round((pb ? Number(pb.congKich) || 0 : 0) * pbPcMult * pbCompat.pbMult * pbGt.heSo) +
+    Math.round((pb ? Number(pb.congKich) || 0 : 0) * pbPcMult * pbCompat.pbMult * pbGt.heSo * v13HeSoBanMenh()) +
     (state.chiSo.thanThuc + cpSum.thanThuc) * Math.max(2, Math.pow(2.2, state.canhGioi));
-  atk *= Math.max(0.5, 1 + cpSum.congKichPct + (lc.bonusChienDau || 0) + (tc.chienDauBonus || 0) + tuongThich.atkBonus);
+  atk *= Math.max(0.5, 1 + cpSum.congKichPct + (lc.bonusChienDau || 0) + (tc.chienDauBonus || 0) + tuongThich.atkBonus + v15AffixBanMenh('atk'));
   atk *= layThuongTheDef().heSoChienDau;
   return Math.round(atk);
 }
@@ -1141,13 +1194,13 @@ function tinhPhongThu() {
   const pb = state.phapBao ? layVatPhamDef(state.phapBao) : null;
   const pbCompat = tinhTuongThichPhapBao(pb);
   const pbPcMult = state.phapBao ? layPhamChatVatPham(state.phapBao).heSo : 1;
-  const pbGt = pb ? tinhHeSoVuotCanh(layCanhGioiPhapBao(pb), /Thông Thiên Linh Bảo/i.test(pb.phanCap || '') ? 9 : null) : { heSo: 1 };
+  const pbGt = pb ? tinhHeSoVuotCanh(layCanhGioiPhapBao(pb), canhGioiToiDaHieuLucPhapBao(pb)) : { heSo: 1 };
   const heSoTieu = 1 + state.tieuCanh * 0.15;
   const p =
     def.phongThuGoc * heSoTieu +
-    Math.round((pb ? Number(pb.phongThu) || 0 : 0) * pbPcMult * pbCompat.pbMult * pbGt.heSo) +
+    Math.round((pb ? Number(pb.phongThu) || 0 : 0) * pbPcMult * pbCompat.pbMult * pbGt.heSo * v13HeSoBanMenh()) +
     (state.chiSo.canCot + cpSum.canCot) * Math.max(1.5, Math.pow(2.0, state.canhGioi));
-  return Math.round(p * Math.max(0.5, 1 + cpSum.phongThuPct + (tc.phongThuBonus || 0)) * layThuongTheDef().heSoChienDau);
+  return Math.round(p * Math.max(0.5, 1 + cpSum.phongThuPct + (tc.phongThuBonus || 0) + v15AffixBanMenh('def')) * layThuongTheDef().heSoChienDau);
 }
 
 function tinhBaoKichPct() {
@@ -1161,7 +1214,8 @@ function tinhBaoKichPct() {
         (state.chiSo.khiVan + cpSum.khiVan) * 0.0025 +
         (state.chiSo.ngoTinh + cpSum.ngoTinh) * 0.002 +
         (tc.baoKichBonus || 0) +
-        cpSum.baoKichPct
+        cpSum.baoKichPct +
+        v15AffixBanMenh('crit')
     )
   );
 }
@@ -1171,7 +1225,7 @@ function tinhNeTranhPct() {
   const cpSum = tinhCongPhapTongHop();
   return Math.max(
     0.01,
-    Math.min(0.45, (state.chiSo.khiVan + cpSum.khiVan) * 0.0035 + (tc.neTranhBonus || 0) + cpSum.neTranhPct)
+    Math.min(0.45, (state.chiSo.khiVan + cpSum.khiVan) * 0.0035 + (tc.neTranhBonus || 0) + cpSum.neTranhPct + v15AffixBanMenh('evade'))
   );
 }
 
@@ -1255,7 +1309,9 @@ function timDanDotPhaTrongTui() {
     if (!vp || vp.loai !== 'dan') continue;
     const rawBonus = Number(vp.hieuUng?.bonusDotPha) || 0;
     if (rawBonus <= 0) continue;
-    const bonus = rawBonus * layPhamChatVatPham(id).heSo;
+    const lechDp = cgHienTai - Number(vp.canhGioi ?? 0);
+    const heSoDp = lechDp === 1 ? 0.7 : 1;
+    const bonus = rawBonus * layPhamChatVatPham(id).heSo * heSoDp;
     // Hợp dùng cho đột phá: không được dùng đan cao hơn cảnh giới hiện tại
     if (vp.canhGioi <= cgHienTai && vp.canhGioi >= Math.max(0, cgHienTai - 1)) {
       if (!best || bonus > best.bonus) best = { vp, vpKey: id, bonus };
@@ -1264,16 +1320,28 @@ function timDanDotPhaTrongTui() {
   return best;
 }
 
+// v1.2: thâm niên công pháp — đổi công pháp mới cần thời gian mới phát huy Đột phá +%
+function heSoThamNienCongPhap() {
+  const namTuDoi = Math.max(0, (state?.nam || 1) - (state?.namDoiCongPhap || 1));
+  if (namTuDoi >= 5) return 1;
+  if (namTuDoi >= 2) return 0.5;
+  return 0;
+}
+
 function tinhTiLeDotPhaDaiCanh() {
   const def = layCanhGioiDef();
   const lc = layLinhCanDef();
   const tc = layTheChatDef();
   const cpSum = tinhCongPhapTongHop();
+  // v1.2: công pháp mới đổi chưa đủ thâm niên thì chỉ phát huy một phần Đột phá +%
+  const cpDp = cpSum.tiLeDotPha;
+  const heSoThamNien = cpDp > 0 ? heSoThamNienCongPhap() : 1;
+  const cpDpHieuLuc = cpDp > 0 ? cpDp * heSoThamNien : cpDp;
   let tiLe =
     (def.tiLeDotPha || 0.2) +
     (lc.bonusDotPha || 0) +
     (tc.dotPhaBonus || 0) +
-    cpSum.tiLeDotPha +
+    cpDpHieuLuc +
     (layThuongTheDef().phatDotPha || 0) +
     (state.chiSo.khiVan + cpSum.khiVan + state.chiSo.thanThuc + cpSum.thanThuc) * 0.0025;
 
@@ -1341,10 +1409,29 @@ function themVat(idOrKey, soLuong = 1, pcOverride = null) {
     const maxO = state.tuiDoMaxO || 10;
     if (hienCo === 0 && soOTrongTui() >= maxO) {
       const vp = layVatPhamDef(targetKey);
+      const tenVp = vp ? vp.ten : targetKey;
+      const giaBan = vp ? Math.max(1, Math.round((vp.gia || 0) * 0.65)) : 0;
+      // v1.2: nguyên liệu/phù lục tự động chuyển vào Kho Động Phủ khi túi đầy
+      const STASH_LOAI = ['linh_thao', 'linh_vat', 'yeu_dan', 'phu_luc'];
+      if (vp && STASH_LOAI.includes(vp.loai)) {
+        state.khoDo = state.khoDo || {};
+        state.khoDo[targetKey] = (state.khoDo[targetKey] || 0) + soLuong;
+        ghiNhatKy(`📦 Túi đầy — tự động chuyển [${tenVp}] vào Kho Động Phủ (tổng ${state.khoDo[targetKey]}).`, 'thuong');
+        if (typeof toast === 'function') toast(`📦 Túi đầy: ${tenVp} → Kho Động Phủ`, 'canh_bao');
+        return true;
+      }
+      // UPDATE v1.1: đồ rẻ (<= 25 LT) tự động bán để không mất loot quý
+      if (vp && giaBan > 0 && giaBan <= 25) {
+        state.linhThach = (state.linhThach || 0) + giaBan;
+        ghiNhatKy(`♻️ Túi đầy — tự động bán [${tenVp}] (+${giaBan.toLocaleString('vi-VN')} LT) để nhường chỗ.`, 'thuong');
+        if (typeof toast === 'function') toast(`♻️ Túi đầy: tự động bán ${tenVp} (+${giaBan} LT)`, 'canh_bao');
+        return true;
+      }
       ghiNhatKy(
-        `⚠️ Túi trữ vật đã đầy (${soOTrongTui()}/${maxO} ô), không thể nhặt thêm [${vp ? vp.ten : targetKey}]! Hãy vào Cửa Hàng bán bớt đồ hoặc mở rộng túi.`,
+        `⚠️ Túi trữ vật đã đầy (${soOTrongTui()}/${maxO} ô), không thể nhặt thêm [${tenVp}]! Hãy vào Cửa Hàng bán bớt đồ hoặc mở rộng túi.`,
         'canh_bao'
       );
+      if (typeof toast === 'function') toast(`⚠️ Túi đầy — không nhặt được ${tenVp}`, 'canh_bao');
       return false;
     }
     state.tuiDo[targetKey] = hienCo + soLuong;
@@ -1393,12 +1480,14 @@ function thayDoiHaoCam(npc, delta, capNhatTuongTac = true) {
   const moi = Math.max(-100, Math.min(100, base + delta));
   npc.haoCamRaw = moi;
   npc.haoCam = Math.round(moi);
+  npc.giuHaoCamKhoiDau = false; // v1.1: đã tương tác thì bắt đầu suy giảm tự nhiên như bình thường
   if (capNhatTuongTac && state) npc.namTuongTacCuoi = state.nam;
   return npc.haoCam;
 }
 
 function giamHaoCamTheoNam(npc, namBuoc) {
   if (!npc || npc.laDaoLuNguoiChoi) return; // Đạo lữ không bị trừ điểm theo năm
+  if (npc.giuHaoCamKhoiDau) return; // v1.1: giữ nguyên nhân duyên tiền định tới lần tương tác đầu
   if (state.nam - (npc.namTuongTacCuoi || 0) < 1) return;
   const cur = typeof npc.haoCamRaw === 'number' ? npc.haoCamRaw : Number(npc.haoCam) || 0;
   if (cur === 0) return;
@@ -2044,6 +2133,7 @@ function dotPha() {
     const bestPill = timDanDotPhaTrongTui();
     if (bestPill) {
       themVat(bestPill.vpKey || bestPill.vp.id, -1);
+      ghiNhanDungDan(bestPill.vp); // v1.2: ghi nhận Dược kháng cho đan đột phá
       tenDanDung = ` (Đã phục dụng [${bestPill.vp.ten}] +${Math.round(bestPill.bonus * 100)}%)`;
     }
   }
@@ -2368,8 +2458,13 @@ function kiemTraDieuKienDungDan(vp, trongTran = false, itemKey = null) {
   const hu = vp.hieuUng || {};
   const coTho = (Number(hu.thoNguyen) || 0) > 0;
   const coDp = (Number(hu.bonusDotPha) || 0) > 0;
-  if (cgCur > vpCg + 2 && !coTho && !coDp) {
+  // Đan hồi HP/MP vẫn dùng được ở cảnh giới cao (hiệu lực suy giảm), đan tu vi/căn cốt quá cũ thì chặn
+  if (cgCur > vpCg + 2 && !((Number(hu.hp) || 0) > 0) && !((Number(hu.mp) || 0) > 0)) {
     return { ok: false, lyDo: 'Đan lực quá yếu với tu vi hiện tại' };
+  }
+  // Đan đột phá chỉ dùng được trong phạm vi 1 cấp cảnh giới
+  if (coDp && cgCur - vpCg > 1) {
+    return { ok: false, lyDo: 'Đan đột phá đã lỗi thời với cảnh giới hiện tại (chỉ dùng được trong 1 cấp)' };
   }
   if (!trongTran && coDp && (state?.dotPhaBuff || 0) > 0) {
     const bGoc = Number(hu.bonusDotPha) > 1 ? Number(hu.bonusDotPha) / 100 : Number(hu.bonusDotPha);
@@ -2384,7 +2479,9 @@ function kiemTraDieuKienDungDan(vp, trongTran = false, itemKey = null) {
   }
   if (!trongTran && ((Number(hu.tuVi) || 0) > 0 || (Number(hu.canCot) || 0) > 0 || coTho)) {
     const dk = thongTinDuocKhangDan(vp);
-    const dangCanHoi = (Number(hu.hp) || 0) > 0 && (state.hp < tinhHpMax() || (state.thuongThe || 0) > 0);
+    const dangCanHoi =
+      ((Number(hu.hp) || 0) > 0 && (state.hp < tinhHpMax() || (state.thuongThe || 0) > 0)) ||
+      ((Number(hu.mp) || 0) > 0 && (state.mp ?? tinhMpMax()) < tinhMpMax());
     if (dk.luotCon <= 0 && !dangCanHoi && !coDp) {
       return {
         ok: false,
@@ -2416,6 +2513,13 @@ function dungVatPham(itemId) {
   }
 
   if (vp.loai === 'phap_bao') {
+    // v1.6.1: chỉ trang bị pháp bảo ngang hoặc thấp hơn cảnh giới hiện tại
+    const cgPb = typeof layCanhGioiPhapBao === 'function' ? Number(layCanhGioiPhapBao(vp)) || 0 : 0;
+    if (state.phapBao !== itemId && cgPb > (state.canhGioi || 0)) {
+      ghiNhatKy(`⚠️ Chưa đủ cảnh giới để trang bị [${vp.ten}] (cần ${layCanhGioiDef(cgPb).ten})!`, 'canh_bao');
+      veGiaoDien();
+      return;
+    }
     state.phapBao = state.phapBao === itemId ? null : itemId;
     kepKhiHuyetVaLinhLuc();
     ghiNhatKy(
@@ -2443,8 +2547,9 @@ function dungVatPham(itemId) {
 
     themVat(itemId, -1);
     const msg = [];
+    const hsLech = typeof v161HeSoLechCap === 'function' ? v161HeSoLechCap(vp) : 1;
     if (hu.tuVi) {
-      const tv = conLuotTham ? Math.max(1, Math.round(Number(hu.tuVi) * heSo * dk.heSoTuVi)) : 0;
+      const tv = conLuotTham ? Math.max(1, Math.round(Number(hu.tuVi) * heSo * dk.heSoTuVi * hsLech)) : 0;
       if (tv > 0) {
         state.tuVi += tv;
         msg.push(`+${tv.toLocaleString()} Tu vi${dk.daDung > 0 ? ` (kháng còn ${Math.round(dk.heSoTuVi * 100)}%)` : ''}`);
@@ -2453,17 +2558,17 @@ function dungVatPham(itemId) {
       }
     }
     if (hu.hp) {
-      const hp = Math.max(1, Math.round(Number(hu.hp) * heSo));
+      const hp = Math.max(1, Math.round(Math.max(Number(hu.hp) * heSo, tinhHpMax() * 0.08) * hsLech));
       state.hp = Math.min(tinhHpMax(), state.hp + hp);
       msg.push(`+${hp.toLocaleString()} Khí huyết`);
-    }
-    if (hu.hp || hu.tuVi) {
-      const hoiMp = Math.max(15, Math.round(tinhMpMax() * 0.3 * heSo));
-      state.mp = Math.min(tinhMpMax(), (state.mp ?? 0) + hoiMp);
-      msg.push(`+${hoiMp.toLocaleString()} Linh lực`);
       if ((state.thuongThe || 0) > 0 && hoiPhucThuongThe(Number(hu.hp) >= 150 || pc.key === 'cuc' ? 2 : 1)) {
         msg.push(`Thương thế hồi còn 【${layThuongTheDef().ten}】`);
       }
+    }
+    if (hu.mp) {
+      const mpHoi = Math.max(1, Math.round(Math.max(Number(hu.mp) * heSo, tinhMpMax() * 0.08) * hsLech));
+      state.mp = Math.min(tinhMpMax(), (state.mp ?? 0) + mpHoi);
+      msg.push(`+${mpHoi.toLocaleString()} Linh lực`);
     }
     if (hu.thoNguyen) {
       const rawTn = Number(hu.thoNguyen);
@@ -2483,10 +2588,16 @@ function dungVatPham(itemId) {
       }
     }
     if (hu.bonusDotPha) {
-      const bGoc = Number(hu.bonusDotPha) > 1 ? Number(hu.bonusDotPha) / 100 : Number(hu.bonusDotPha);
-      const b = Math.round(bGoc * heSo * 100) / 100;
-      state.dotPhaBuff = Math.max(state.dotPhaBuff || 0, b);
-      msg.push(`+${Math.round(b * 100)}% tỷ lệ Đột phá đại cảnh tới`);
+      const lechDp = (state.canhGioi || 0) - (Number(vp.canhGioi) || 0);
+      if (lechDp > 1) {
+        msg.push('⚡ Đột phá: đan đã lỗi thời, không còn hiệu lực');
+      } else {
+        const bGoc = Number(hu.bonusDotPha) > 1 ? Number(hu.bonusDotPha) / 100 : Number(hu.bonusDotPha);
+        const heSoDp = lechDp === 1 ? 0.7 : 1;
+        const b = Math.round(bGoc * heSo * heSoDp * 100) / 100;
+        state.dotPhaBuff = Math.max(state.dotPhaBuff || 0, b);
+        msg.push(`+${Math.round(b * 100)}% tỷ lệ Đột phá đại cảnh tới${heSoDp < 1 ? ' (đan cũ −30%)' : ''}`);
+      }
     }
     if (coChiSoTuLuyen && conLuotTham) ghiNhanDungDan(vp);
     ghiNhatKy(`💊 Phục dụng [${vp.ten} · ${pc.ten}]: ${msg.join(', ') || 'Không có biến hóa rõ rệt'}.`, 'tot');
@@ -2495,13 +2606,20 @@ function dungVatPham(itemId) {
   }
 }
 
-function muaVatPham(loaiMua, idOrKey) {
+function muaVatPham(loaiMua, idOrKey, soLuongMua = 1) {
+  // UPDATE v1.1: hỗ trợ mua nhiều (nút "Mua 5")
+  if (loaiMua === 'vat_pham' && Number(soLuongMua) > 1 && typeof muaNhieuVatPham === 'function') {
+    return muaNhieuVatPham(idOrKey, soLuongMua);
+  }
   if (loaiMua === 'vat_pham') {
     const vp = layVatPhamDef(idOrKey);
     if (!vp) return;
     const hasPc = String(idOrKey || '').includes('@');
     const pc = layPhamChatVatPham(idOrKey);
-    const giaMua = hasPc ? Math.max(1, Math.round((vp.gia || 0) * pc.heSo)) : vp.gia || 0;
+    const shopVp = (typeof shopHangCache !== 'undefined' && shopHangCache && Array.isArray(shopHangCache.items))
+      ? shopHangCache.items.find(x => x && x.shopKey === idOrKey)
+      : null;
+    const giaMua = shopVp && shopVp.giaShop ? Number(shopVp.giaShop) : hasPc ? Math.max(1, Math.round((vp.gia || 0) * pc.heSo)) : vp.gia || 0;
     if (state.linhThach < giaMua) {
       ghiNhatKy(`Không đủ ${giaMua.toLocaleString()} Linh thạch để mua [${vp.ten} · ${pc.ten}]!`, 'canh_bao');
       veGiaoDien();
@@ -2655,8 +2773,21 @@ function trangBiCongPhapHoacBiThuat(cid) {
       ghiNhatKy(`⚡ Trang bị Bí thuật phụ [${cp.ten}] (${state.biThuat.length}/${MAX_BI_THUAT} slot)!`, 'tot');
     }
   } else {
+    if (state.congPhap === cid) return; // đang tu rồi, tránh hao thời gian vô ích
+    if (state.tranHienTai || state.suKienHienTai || state.hauChienNpc) {
+      ghiNhatKy('⚠️ Không thể chuyển công pháp khi đang chiến đấu / xử lý biến cố!', 'canh_bao');
+      if (typeof toast === 'function') toast('⚠️ Đang bận — không thể chuyển công pháp', 'canh_bao');
+      return;
+    }
+    // v1.2: chuyển công pháp tốn 3 tháng chuyển hóa công lực; Đột phá +% chỉ phát huy đủ sau 5 năm
     state.congPhap = cid;
-    ghiNhatKy(`🔄 Chuyển sang vận chuyển chủ công pháp 【${cp.ten}】!`, 'tot');
+    state.namDoiCongPhap = state.nam;
+    tienThoiGian(3);
+    ghiNhatKy(
+      `🔄 Chuyển sang vận chuyển chủ công pháp 【${cp.ten}】 (mất 3 tháng chuyển hóa công lực; cần tu luyện đủ 5 năm để phát huy đầy đủ Đột phá +%).`,
+      'tot'
+    );
+    if (typeof toast === 'function') toast(`🔄 Đã chuyển sang ${cp.ten} (3 tháng chuyển hóa)`, 'tot');
   }
   kepKhiHuyetVaLinhLuc();
   luuGame();
@@ -4371,7 +4502,7 @@ function hanhDongBiCanh(idx) {
     } else {
       const matHp = Math.max(12, Math.round(tinhHpMax() * 0.18));
       state.hp = Math.max(1, state.hp - matHp);
-      ghiNhatKy(`💥 Cấm chế phản phệ gây mất -${matHp.toLocaleString()} Khí huyết!`, 'canh_bao');
+      ghiNhatKy(`💥 Cấm chế phản phệ gây mất ${matHp.toLocaleString()} Khí huyết!`, 'canh_bao');
     }
     tienBuocBiCanh();
   } else if (ch.kieu === 'linh_ngo_bia') {
@@ -4993,7 +5124,12 @@ function thucThiHieuUng(dsHieuUng, baseCg = state.canhGioi) {
       state.tuVi = Math.max(0, state.tuVi + v);
     }
     if (ef.linhThach) {
-      const v = Number(ef.linhThach) > 0 ? scaleGiaTriTheoCanhGioi(Number(ef.linhThach), baseCg) : Number(ef.linhThach);
+      const rawLt = Number(ef.linhThach);
+      // v1.2: chặn "được mùa" — thưởng Linh thạch scale tối đa x4 so với gốc
+      const v =
+        rawLt > 0
+          ? Math.min(scaleGiaTriTheoCanhGioi(rawLt, baseCg), rawLt * 4)
+          : rawLt;
       state.linhThach = Math.max(0, state.linhThach + v);
     }
     if (ef.hp) {
@@ -5355,14 +5491,31 @@ function hanhDongChienDau(kieu) {
       return;
     }
     const pcDan = layPhamChatVatPham(danId);
+    const huDan = vp.hieuUng || {};
+    if (!huDan.hp && !huDan.mp) {
+      t.logTran.push(`⚠️ [${vp.ten}] không phải đan chiến đấu (chỉ hồi HP/Linh lực mới dùng được trong trận).`);
+      veGiaoDien();
+      return;
+    }
     themVat(danId, -1);
-    const hpBase = Math.max(tinhHpMax() * 0.22, (Number(vp.hieuUng?.hp) || 40) * pcDan.heSo);
-    const hoi = Math.max(1, Math.round(hpBase * giamHoiTa));
-    const hoiMp = Math.max(15, Math.round(tinhMpMax() * 0.3 * pcDan.heSo));
-    state.hp = Math.min(tinhHpMax(), state.hp + hoi);
-    state.mp = Math.min(tinhMpMax(), state.mp + hoiMp);
-    hoiPhucThuongThe(pcDan.key === 'cuc' ? 2 : 1);
-    t.logTran.push(`Hiệp ${t.hiep}: Phục dụng 1 [${vp.ten} · ${pcDan.ten}], hồi +${hoi.toLocaleString()} HP${giamHoiTa < 1 ? ' (bị Tuyệt hồi)' : ''} & +${hoiMp.toLocaleString()} Linh lực!`);
+    const hsLech = typeof v161HeSoLechCap === 'function' ? v161HeSoLechCap(vp) : 1;
+    let hoi = 0;
+    let hoiMp = 0;
+    if (huDan.hp) {
+      const hpBase = Math.max(tinhHpMax() * 0.22, (Number(huDan.hp) || 40) * pcDan.heSo);
+      hoi = Math.max(1, Math.round(hpBase * giamHoiTa * hsLech));
+      state.hp = Math.min(tinhHpMax(), state.hp + hoi);
+    }
+    if (huDan.mp) {
+      const mpBase = Math.max(tinhMpMax() * 0.22, (Number(huDan.mp) || 30) * pcDan.heSo);
+      hoiMp = Math.max(1, Math.round(mpBase * hsLech));
+      state.mp = Math.min(tinhMpMax(), (state.mp ?? 0) + hoiMp);
+    }
+    if (huDan.hp) hoiPhucThuongThe(pcDan.key === 'cuc' ? 2 : 1);
+    const phanHoi = [];
+    if (hoi > 0) phanHoi.push(`+${hoi.toLocaleString()} HP`);
+    if (hoiMp > 0) phanHoi.push(`+${hoiMp.toLocaleString()} Linh lực`);
+    t.logTran.push(`Hiệp ${t.hiep}: Phục dụng 1 [${vp.ten} · ${pcDan.ten}], ${phanHoi.join(' & ')}!${giamHoiTa < 1 && hoi > 0 ? ' (bị Tuyệt hồi)' : ''}`);
   } else if (kieu === 'dieu_tuc') {
     const hoiMp = Math.max(12, Math.round(tinhMpMax() * (0.25 + (cpSumTran.hoiMpPct || 0))));
     state.mp = Math.min(tinhMpMax(), state.mp + hoiMp);
@@ -5372,7 +5525,7 @@ function hanhDongChienDau(kieu) {
     if ((t.cooldowns._pb || 0) > 0) return;
     t.cooldowns._pb = 2 + 1; // Hồi chiêu 2 hiệp (cuối lượt trừ 1 còn 2)
     const pb = state.phapBao ? layVatPhamDef(state.phapBao) : null;
-    const pbGt = pb ? tinhHeSoVuotCanh(layCanhGioiPhapBao(pb), /Thông Thiên Linh Bảo/i.test(pb.phanCap || '') ? 9 : null) : { heSo: 1, tyLeHieuUng: 1, vuot: 0 };
+    const pbGt = pb ? tinhHeSoVuotCanh(layCanhGioiPhapBao(pb), canhGioiToiDaHieuLucPhapBao(pb)) : { heSo: 1, tyLeHieuUng: 1, vuot: 0 };
     const heSo = pb ? Math.max(1.0, 1.0 + 0.5 * pbGt.heSo) : 1.25;
     const xuyenGiap = pb ? 0.15 * pbGt.tyLeHieuUng : 0;
     const kq = tinhSatThuong(atkTa, defDichThuc, heSo, critTa, 0.05, xuyenGiap);
@@ -6076,7 +6229,10 @@ function veGiaoDien() {
     <div class="stat-row"><span>Bạo kích / Né tránh:</span> <span>${Math.round(tinhBaoKichPct() * 100)}% / ${Math.round(tinhNeTranhPct() * 100)}%</span></div>
     <div class="stat-row"><span>Căn cốt / Ngộ tính:</span> <span>${state.chiSo.canCot + (tinhCongPhapTongHop().canCot || 0)} / ${state.chiSo.ngoTinh + (tinhCongPhapTongHop().ngoTinh || 0)}</span></div>
     <div class="stat-row"><span>Khí vận / Thần thức:</span> <span>${state.chiSo.khiVan + (tinhCongPhapTongHop().khiVan || 0)} / ${state.chiSo.thanThuc + (tinhCongPhapTongHop().thanThuc || 0)}</span></div>
-    <div class="stat-row"><span>Chủ công pháp:</span> <span><b>${cpDef.ten}</b> <span class="muted">(${tinhTuongThichLinhCan().label} · ${moTaCongPhapNgan(cpDef)})</span></span></div>
+    <div class="stat-row"><span>Chủ công pháp:</span> <span><b>${cpDef.ten}</b> <span class="muted">(${tinhTuongThichLinhCan().label} · ${moTaCongPhapNgan(cpDef)})</span> ${(() => {
+      const gt = tinhHeSoVuotCanh(cpDef.canhGioi || 0, cpDef.canhGioiToiDa);
+      return gt.vuot > 0 ? `<b class="hl-danger">${gt.nhan}</b>` : '';
+    })()}</span></div>
     <div class="stat-row"><span>Bí thuật (${(state.biThuat || []).length}/${MAX_BI_THUAT}):</span> <span>${
       (state.biThuat || [])
         .map(id => {
@@ -6089,7 +6245,7 @@ function veGiaoDien() {
       pbDef
         ? (() => {
             const pcPb = layPhamChatVatPham(state.phapBao);
-            const pbGt = tinhHeSoVuotCanh(layCanhGioiPhapBao(pbDef), /Thông Thiên Linh Bảo/i.test(pbDef.phanCap || '') ? 9 : null);
+            const pbGt = tinhHeSoVuotCanh(layCanhGioiPhapBao(pbDef), canhGioiToiDaHieuLucPhapBao(pbDef));
             const atkPb = Math.round((pbDef.congKich || 0) * pcPb.heSo * pbGt.heSo);
             const defPb = Math.round((pbDef.phongThu || 0) * pcPb.heSo * pbGt.heSo);
             return `<span><b>${pbDef.ten}</b> <span class="badge">${layRankVatPham(pbDef)}</span> <span class="badge ${pcPb.cls}">${pcPb.ten}</span> <span class="muted">(Công +${atkPb.toLocaleString()} · Thủ +${defPb.toLocaleString()} · ${tinhTuongThichPhapBao(pbDef).label}${pbGt.nhan ? ` · <b class="hl-danger">${pbGt.nhan}</b>` : ''})</span></span>`;
@@ -6097,6 +6253,9 @@ function veGiaoDien() {
         : '<b>Chưa trang bị</b>'
     }</div>
     ${state.dotPhaBuff > 0 ? `<div class="stat-row"><span>Dược lực đột phá:</span> <b class="hl-green">+${Math.round(state.dotPhaBuff * 100)}%</b></div>` : ''}
+    ${typeof v11CongPhapLoiThoi === 'function' && v11CongPhapLoiThoi()
+      ? `<div class="hint-line">⚠️ <b>Chủ công pháp đã lỗi thời</b> — nên chuyển sang công pháp cùng cảnh giới: <b>${escapeHtml(v11MoTaCongPhapGoiY())}</b>.</div>`
+      : ''}
   `;
 
   veCotGiua();
@@ -6154,8 +6313,8 @@ function veCotGiua() {
     const danHoiEntry = Object.entries(state.tuiDo || {})
       .filter(([, sl]) => sl > 0)
       .map(([key]) => ({ key, vp: layVatPhamDef(key) }))
-      .filter(x => x.vp && x.vp.loai === 'dan' && (Number(x.vp.hieuUng?.hp) > 0 || Number(x.vp.hieuUng?.tuVi) > 0) && kiemTraDieuKienDungDan(x.vp, true).ok)
-      .sort((a, b) => (b.vp.canhGioi ?? 0) - (a.vp.canhGioi ?? 0) || (Number(b.vp.hieuUng?.hp) || 0) - (Number(a.vp.hieuUng?.hp) || 0))[0];
+      .filter(x => x.vp && x.vp.loai === 'dan' && (Number(x.vp.hieuUng?.hp) > 0 || Number(x.vp.hieuUng?.mp) > 0) && kiemTraDieuKienDungDan(x.vp, true).ok)
+      .sort((a, b) => (b.vp.canhGioi ?? 0) - (a.vp.canhGioi ?? 0) || ((Number(b.vp.hieuUng?.hp) || 0) + (Number(b.vp.hieuUng?.mp) || 0)) - ((Number(a.vp.hieuUng?.hp) || 0) + (Number(a.vp.hieuUng?.mp) || 0)))[0];
     const danHoi = danHoiEntry ? { ...danHoiEntry.vp, key: danHoiEntry.key } : null;
 
     const phuChay = ['phu_truyen_tong', 'phu_nghi_binh'].find(id => soLuongVat(id) > 0);
@@ -6187,7 +6346,7 @@ function veCotGiua() {
           ${skillBtns}
           <button class="btn" onclick="hanhDongChienDau('dieu_tuc')">🧘 Điều tức hồi linh (+25% Linh lực · -25% ST nhận lượt này)</button>
           ${phuVp ? `<button class="btn btn-ai" onclick="hanhDongChienDau('dung_phu:${phuVp.id}')">🧿 Phóng ${escapeHtml(phuVp.ten)} (Còn ${soLuongVat(phuVp.id)} · xuyên 50% giáp)</button>` : ''}
-          ${danHoi ? `<button class="btn" onclick="hanhDongChienDau('dung_dan:${danHoi.key || danHoi.id}')">💊 Uống ${escapeHtml(danHoi.ten)} [${layPhamChatVatPham(danHoi.key || danHoi.id).ten}] (Còn ${soLuongVat(danHoi.key || danHoi.id)} · hồi HP & LL)</button>` : ''}
+          ${danHoi ? `<button class="btn" onclick="hanhDongChienDau('dung_dan:${danHoi.key || danHoi.id}')">💊 Uống ${escapeHtml(danHoi.ten)} [${layPhamChatVatPham(danHoi.key || danHoi.id).ten}] (Còn ${soLuongVat(danHoi.key || danHoi.id)} · ${danHoi.hieuUng?.hp ? 'hồi HP' : ''}${danHoi.hieuUng?.hp && danHoi.hieuUng?.mp ? ' & ' : ''}${danHoi.hieuUng?.mp ? 'hồi LL' : ''})</button>` : ''}
           <button class="btn" onclick="hanhDongChienDau('toc_chien')">⚡ Tốc chiến tự động phân thắng bại</button>
           ${phuChayVp ? `<button class="btn btn-ai" onclick="hanhDongChienDau('dung_phu_chay:${phuChayVp.id}')">🧿 Tế [${escapeHtml(phuChayVp.ten)}] độn tẩu (${tiLePhuPct}% · Còn ${soLuongVat(phuChayVp.id)})</button>` : ''}
           <button class="btn btn-danger" onclick="hanhDongChienDau('bo_chay')">💨 Độn thuật bỏ chạy (${tiLeChayPct}%${(t.canhGioiDich ?? state.canhGioi) - state.canhGioi >= 2 ? ' · Bị áp chế cảnh giới' : ''})</button>
@@ -6259,11 +6418,14 @@ function veCotGiua() {
         <div class="event-title">🏔️ HÀNH ĐỘNG TẠI 【${vung.ten.toUpperCase()}】</div>
         <p class="muted">${vung.moTa}</p>
         <div class="action-grid">
-          <button class="btn" onclick="beQuan(1)">🧘 Bế quan 1 năm (+${tinhTocDoTuLuyenNam().toLocaleString()} TV)</button>
-          <button class="btn" onclick="beQuan(5)">🧘 Bế quan 5 năm (+${(tinhTocDoTuLuyenNam() * 5).toLocaleString()} TV)</button>
-          <button class="btn" onclick="beQuan(10)">🧘 Bế quan 10 năm (+${(tinhTocDoTuLuyenNam() * 10).toLocaleString()} TV)</button>
-          <button class="btn ${duTuVi ? 'btn-primary' : ''}" onclick="dotPha()" ${duTuVi ? '' : 'disabled title="Cần tích lũy đủ Tu vi mới có thể xung kích!"'}>
+          <button class="btn" title="Dao động ±8%/năm do linh khí & ngộ tính" onclick="beQuan(1)">🧘 Bế quan 1 năm (≈${tinhTocDoTuLuyenNam().toLocaleString()} TV)</button>
+          <button class="btn" title="Dao động ±8%/năm" onclick="beQuan(5)">🧘 Bế quan 5 năm (≈${(tinhTocDoTuLuyenNam() * 5).toLocaleString()} TV)</button>
+          <button class="btn" title="Dao động ±8%/năm" onclick="beQuan(10)">🧘 Bế quan 10 năm (≈${(tinhTocDoTuLuyenNam() * 10).toLocaleString()} TV)</button>
+          <button class="btn ${duTuVi ? 'btn-primary' : ''}" onclick="dotPha()" ${duTuVi ? '' : 'disabled title="Cần tích lũy đủ Tu vi mới có thể xung kích!"'} title="${typeof moTaChiTietDotPha === 'function' ? escapeHtml(moTaChiTietDotPha()) : ''}">
             ⚡ ${laDaiCanh ? `Xung kích Đại Cảnh Giới (${tiLeDp}%)` : 'Đột phá Tiểu Cảnh Giới'}
+          </button>
+          <button class="btn" style="grid-column: 1 / -1" onclick="batTatAutoTuLuyen()" title="Mỗi 6 giây = 1 năm bế quan; tự dừng khi đủ Tu vi hoặc gặp sự kiện">
+            ${typeof dangAutoTuLuyen === 'function' && dangAutoTuLuyen() ? '⏹ Dừng treo máy tu luyện' : '⏳ Treo máy tự bế quan (6 giây/năm)'}
           </button>
           ${
             (state.thuongThe || 0) > 0 || state.hp < tinhHpMax()
@@ -6279,13 +6441,19 @@ function veCotGiua() {
             🎲 Lịch luyện Giang Hồ (2 tháng · Kỳ ngộ ngẫu nhiên)
           </button>
           ${dsBiCanhVung
-            .map(
-              bc => `<button class="btn btn-primary" style="grid-column: 1 / -1" onclick="thamHiemBiCanh('${bc.id}')">
-                🌌 Bí Cảnh: 【${bc.ten}】 (Cần ${layCanhGioiDef(bc.canhGioiMin).ten}–${layCanhGioiDef(bc.canhGioiMax).ten} · Phí ${bc.phiLinhThach.toLocaleString()} LT · ${bc.namTon} năm)
-              </button>`
-            )
+            .map(bc => {
+              const hopCanhGioi = state.canhGioi >= bc.canhGioiMin && state.canhGioi <= bc.canhGioiMax;
+              const yeuCau = `Yêu cầu ${layCanhGioiDef(bc.canhGioiMin).ten}–${layCanhGioiDef(bc.canhGioiMax).ten}`;
+              const conLai = typeof v16ConLaiBiCanh === 'function' ? v16ConLaiBiCanh(bc.id) : 0;
+              const coTheVao = hopCanhGioi && conLai <= 0;
+              const lyDoKhoa = !hopCanhGioi ? yeuCau : conLai > 0 ? `Chu kỳ ${bc.chuKyMo || ''} — mở lại sau ${conLai} năm` : '';
+              return `<button class="btn ${coTheVao ? 'btn-primary' : ''}" style="grid-column: 1 / -1" onclick="thamHiemBiCanh('${bc.id}')" ${coTheVao ? '' : `disabled title="${escapeHtml(lyDoKhoa)}"`}>
+                🌌 Bí Cảnh: 【${bc.ten}】 (Cần ${layCanhGioiDef(bc.canhGioiMin).ten}–${layCanhGioiDef(bc.canhGioiMax).ten} · Phí ${bc.phiLinhThach.toLocaleString()} LT · ${bc.namTon} năm · ${escapeHtml(typeof v16NhanChuKy === 'function' ? v16NhanChuKy(bc) : bc.chuKyMo || 'Thường trực')})${coTheVao ? '' : ` · 🔒 ${lyDoKhoa}`}
+              </button>`;
+            })
             .join('')}
         </div>
+        ${typeof goiYViecNenLam === 'function' ? goiYViecNenLam() : ''}
       </div>`;
   }
 
@@ -6323,22 +6491,70 @@ function layKhoHangShop(vung, maxCg) {
   if (shopHangCache.key === key) return shopHangCache;
 
   const hopCg = cg => cg <= maxCg;
+  // v1.6.1: vật phẩm (đan dược/trang bị/phù lục/túi/yêu đan) chỉ bán bằng cảnh giới hiện tại
+  const cgToiDa = Math.min(maxCg, Number(state.canhGioi) || 0);
+  const cgHienTai = Number(state.canhGioi) || 0;
+  const hopCgVatPham = cg => cg <= cgToiDa;
+  // Đan dược & pháp bảo: chỉ bán đúng cảnh giới hiện tại
+  const hopCgDanVaPhapBao = cg => Number(cg) === cgHienTai;
+  // Công pháp/đan phương vẫn có thể vượt 1 cấp như trước
+  const hopCgTriThuc = cg => cg <= maxCg;
+  // UPDATE v1.1: chọn hàng có trọng số — ưu tiên món dùng được ngay & vừa túi tiền
+  const uuTien = (arr, n, diemFn) =>
+    [...arr]
+      .map(x => ({ x, s: (diemFn ? diemFn(x) : 0) + Math.random() * 0.9 }))
+      .sort((a, b) => b.s - a.s)
+      .slice(0, n)
+      .map(o => o.x);
+  const nganSach = Math.max(200, Number(state.linhThach) || 0);
+  // v1.1.1: cấp hàng "phù hợp" = cảnh giới người chơi (không lệch lên cảnh giới kế tiếp)
+  const cgMuc = Math.min(state.canhGioi, maxCg);
+
   const allVp = window.PN_DATA.vatPham || [];
-  const pbList = allVp.filter(v => v.loai === 'phap_bao' && hopCg(v.canhGioi ?? 0));
-  const danList = allVp.filter(v => v.loai === 'dan' && hopCg(v.canhGioi ?? 0));
-  const phuList = allVp.filter(v => v.loai === 'phu_luc' && hopCg(v.canhGioi ?? 0));
-  const truList = allVp.filter(v => v.loai === 'tru_vat' && hopCg(v.canhGioi ?? 0));
-  const thaoList = allVp.filter(v => {
-    if (v.loai !== 'linh_thao') return false;
-    if (maxCg <= 1 && (v.gia || 0) > 400) return false;
-    if (maxCg <= 2 && (v.gia || 0) > 5000) return false;
+  const pbList = allVp.filter(v => v.loai === 'phap_bao' && hopCgDanVaPhapBao(v.canhGioi ?? 0));
+  const danList = allVp.filter(v => {
+    if (v.loai !== 'dan' || !hopCgDanVaPhapBao(v.canhGioi ?? 0)) return false;
     return true;
   });
-  const vlList = allVp.filter(v => ['yeu_dan', 'linh_vat'].includes(v.loai) && hopCg(layCanhGioiVatPham(v)));
+  const phuList = allVp.filter(v => v.loai === 'phu_luc' && hopCgVatPham(v.canhGioi ?? 0));
+  const truList = allVp.filter(v => v.loai === 'tru_vat' && hopCgVatPham(v.canhGioi ?? 0));
+  const thaoList = allVp.filter(v => {
+    if (v.loai !== 'linh_thao') return false;
+    if (layCanhGioiVatPham(v) > cgToiDa) return false;
+    if (cgToiDa <= 1 && (v.gia || 0) > 400) return false;
+    if (cgToiDa <= 2 && (v.gia || 0) > 5000) return false;
+    return true;
+  });
+  const vlList = allVp.filter(v => ['yeu_dan', 'linh_vat'].includes(v.loai) && hopCgVatPham(layCanhGioiVatPham(v)));
+
+  const pbChon = uuTien(pbList, vung.coPhuongThi ? 6 : 3, v => {
+    const lech = Math.abs(Number(v.canhGioi ?? 0) - cgMuc);
+    return 2.4 - lech * 1.1 + ((v.gia || 0) <= nganSach * 1.5 ? 1.1 : -0.7);
+  });
+  // Bảo đảm luôn có ít nhất 1 vũ khí rẻ để người chơi mới trang bị được
+  if (pbChon.length > 0 && !pbChon.some(v => (v.gia || 0) <= nganSach * 1.5)) {
+    const reNhat = [...pbList].sort((a, b) => (a.gia || 0) - (b.gia || 0))[0];
+    if (reNhat) pbChon[pbChon.length - 1] = reNhat;
+  }
+
+  const danChon = uuTien(danList, vung.coPhuongThi ? 6 : 4, v => {
+    const lech = Math.abs(Number(v.canhGioi ?? 0) - cgMuc);
+    const coTuVi = Number(v.hieuUng?.tuVi) > 0 ? 0.8 : 0;
+    const laDanDotPha = Number(v.hieuUng?.bonusDotPha) > 0 ? (laDinhPhongDaiCanh() ? 2.2 : 0.5) : 0;
+    const vuaTien = (v.gia || 0) <= nganSach ? 0.7 : -0.5;
+    return 2.0 - lech * 0.9 + coTuVi + laDanDotPha + vuaTien;
+  });
+  // Ở đỉnh đại cảnh giới mà chưa thấy đan đột phá phù hợp thì chèn thêm 1 đan hỗ trợ
+  if (laDinhPhongDaiCanh()) {
+    const danDp = danList
+      .filter(v => Number(v.hieuUng?.bonusDotPha) > 0)
+      .sort((a, b) => (a.gia || 0) - (b.gia || 0))[0];
+    if (danDp && !danChon.some(v => v.id === danDp.id)) danChon.push(danDp);
+  }
 
   const pickedItems = [
-    ...chonNgauNhienNhieu(pbList, vung.coPhuongThi ? 6 : 3),
-    ...chonNgauNhienNhieu(danList, vung.coPhuongThi ? 6 : 4),
+    ...pbChon,
+    ...danChon,
     ...chonNgauNhienNhieu(phuList, 3),
     ...chonNgauNhienNhieu(truList, 2),
     ...chonNgauNhienNhieu(thaoList, vung.coPhuongThi ? 6 : 4),
@@ -6349,17 +6565,48 @@ function layKhoHangShop(vung, maxCg) {
     return { ...v, shopKey, pcKey: pc.key, giaShop: Math.max(1, Math.round((v.gia || 0) * pc.heSo)) };
   });
 
+  // v1.2: đan hỗ trợ đột phá luôn tối thiểu Trung phẩm (tránh chuỗi xui Hạ phẩm liên tiếp)
+  const dpItem = pickedItems.find(v => Number(v.hieuUng?.bonusDotPha) > 0);
+  if (dpItem && dpItem.pcKey === 'ha') {
+    const pcTrung = layPhamChatVatPham('trung');
+    dpItem.shopKey = taoItemKey(dpItem.id, 'trung');
+    dpItem.pcKey = 'trung';
+    dpItem.giaShop = Math.max(1, Math.round((dpItem.gia || 0) * pcTrung.heSo));
+  }
+
   const cpList = (window.PN_DATA.congPhap || []).filter(
-    c => c.coTheMua !== false && hopCg(c.canhGioi ?? 0) && !state.congPhapDaHoc.includes(c.id)
+    c => c.coTheMua !== false && hopCgTriThuc(c.canhGioi ?? 0) && !state.congPhapDaHoc.includes(c.id)
   );
   const dpList = (window.PN_DATA.danPhuong || []).filter(
-    d => hopCg(d.canhGioi ?? 1) && !state.danPhuongDaHoc.includes(d.id)
+    d => hopCgTriThuc(d.canhGioi ?? 1) && !state.danPhuongDaHoc.includes(d.id)
   );
+
+  // Ưu tiên công pháp/bí thuật đúng cảnh giới, đủ tiền, và lấp slot bí thuật còn trống
+  const soBíThuatDangCo = (state.biThuat || []).length;
+  const cpChon = uuTien(cpList, vung.coPhuongThi ? 5 : 3, c => {
+    const cgC = Number(c.canhGioi) || 0;
+    const dungCap = cgC === cgMuc ? 2.2 : cgC === maxCg ? 0.4 : 0;
+    const laBiThuat = c.loai === 'BI_THUAT' && soBíThuatDangCo < 3 ? 0.9 : 0;
+    const vuaTien = (c.gia || 0) <= Math.max(150, state.linhThach) ? 0.6 : -0.6;
+    const tocDo = (c.tuLuyen?.heSoTocDo || 1) * 0.8;
+    return dungCap + laBiThuat + vuaTien + tocDo;
+  });
+
+  // v1.1.1: bảo đảm luôn có 1 công pháp TU_LUYEN đúng cảnh giới để thay thế công pháp lỗi thời
+  if (!cpChon.some(c => c.loai === 'TU_LUYEN' && Number(c.canhGioi) === cgMuc)) {
+    const cpThayThe = cpList
+      .filter(c => c.loai === 'TU_LUYEN' && Number(c.canhGioi) === cgMuc)
+      .sort((a, b) => (b.tuLuyen?.heSoTocDo || 1) - (a.tuLuyen?.heSoTocDo || 1))[0];
+    if (cpThayThe) {
+      if (cpChon.length >= 3) cpChon[cpChon.length - 1] = cpThayThe;
+      else cpChon.push(cpThayThe);
+    }
+  }
 
   shopHangCache = {
     key,
     items: pickedItems,
-    congPhap: chonNgauNhienNhieu(cpList, vung.coPhuongThi ? 5 : 3),
+    congPhap: cpChon,
     danPhuong: chonNgauNhienNhieu(dpList, 3)
   };
   return shopHangCache;
@@ -6430,9 +6677,23 @@ function renderShopMuaListHtml(vung, maxCg, q, tp) {
       const pc = layPhamChatVatPham(sKey);
       const rankTen = layRankVatPham(v);
       const giaHien = v.giaShop || Math.max(1, Math.round((v.gia || 0) * pc.heSo));
+      // v1.6.1: đan dược có tồn kho ngẫu nhiên 1–9 mỗi phiên chợ
+      const laDan = v.loai === 'dan';
+      const tonGoc = laDan && typeof v161TonKhoGoc === 'function' ? v161TonKhoGoc(sKey) : null;
+      const tonKho = laDan && typeof v161TonKhoCon === 'function' ? v161TonKhoCon(sKey) : null;
+      const hetHang = tonKho !== null && tonKho <= 0;
+      const hopCanhGioi = Number(v.canhGioi ?? 0) === state.canhGioi;
+      const vuotCanhGioi = Number(v.canhGioi ?? 0) > state.canhGioi;
+      const coTheMuaNhieu = ['dan', 'linh_thao', 'phu_luc', 'yeu_dan', 'linh_vat'].includes(v.loai);
+      // v1.2: túi đầy thì không cho mua món cần ô mới (tránh bấm xong mới báo lỗi)
+      const canOVatMoi = soLuongVat(sKey) <= 0 && soOTrongTui() >= (state.tuiDoMaxO || 10);
+      const khoaMua = hetHang || (canOVatMoi && !['linh_thao', 'linh_vat', 'yeu_dan', 'phu_luc'].includes(v.loai));
       cards.push(`<div class="card-row">
-        <div><b>${v.ten}</b> <span class="badge">${rankTen}</span> <span class="badge ${pc.cls}">${pc.ten}</span> <span class="hl-gold">(${giaHien.toLocaleString()} LT)</span><div class="hl-realm">${moTaVatPhamNgan(v, sKey)}</div><div class="muted">${v.moTa}</div></div>
-        <button class="btn btn-sm" onclick="muaVatPham('vat_pham', '${sKey}')">Mua</button>
+        <div><b>${v.ten}</b> <span class="badge">${rankTen}</span> <span class="badge ${pc.cls}">${pc.ten}</span> ${hopCanhGioi ? '<span class="badge hl-green">Phù hợp cảnh giới</span>' : ''} ${vuotCanhGioi ? `<span class="badge" title="Cần đạt ${layCanhGioiDef(v.canhGioi).ten} mới dùng được">⚠️ Vượt cấp (${layCanhGioiDef(v.canhGioi).ten})</span>` : ''} ${tonKho !== null ? `<span class="badge ${hetHang ? 'hl-danger' : 'hl-gold'}">📦 ${hetHang ? 'Hết hàng' : `Còn ${tonKho}/${tonGoc}`}</span>` : ''} <span class="hl-gold">(${giaHien.toLocaleString()} LT)</span><div class="hl-realm">${moTaVatPhamNgan(v, sKey)}</div><div class="muted">${v.moTa}</div></div>
+        <div class="row-actions">
+          <button class="btn btn-sm" onclick="muaVatPham('vat_pham', '${sKey}')" ${khoaMua ? `disabled title="${hetHang ? 'Món này đã hết hàng trong phiên chợ này' : 'Túi trữ vật đã đầy — hãy bán bớt hoặc mở rộng túi'}"` : ''}>Mua 1</button>
+          ${coTheMuaNhieu ? `<button class="btn btn-sm btn-primary" onclick="muaVatPham('vat_pham', '${sKey}', 5)" ${khoaMua || (tonKho !== null && tonKho < 5) ? `disabled title="${hetHang ? 'Món này đã hết hàng' : tonKho !== null && tonKho < 5 ? 'Không đủ tồn kho để mua 5' : 'Túi trữ vật đã đầy'}"` : ''}>Mua 5</button>` : ''}
+        </div>
       </div>`);
     }
   }
@@ -6441,7 +6702,7 @@ function renderShopMuaListHtml(vung, maxCg, q, tp) {
       if (state.congPhapDaHoc.includes(c.id)) continue;
       if (q && !c.ten.toLowerCase().includes(q) && !(c.moTa || '').toLowerCase().includes(q)) continue;
       cards.push(`<div class="card-row">
-        <div><b>[${c.loai === 'BI_THUAT' ? 'Bí thuật' : 'Công pháp'}] ${c.ten}</b> <span class="badge">${layCanhGioiDef(c.canhGioi).ten}</span> <span class="hl-gold">(${(c.gia || 0).toLocaleString()} LT)</span><div class="hl-realm">${moTaCongPhapNgan(c)}</div><div class="muted">${c.moTa}</div></div>
+        <div><b>[${c.loai === 'BI_THUAT' ? 'Bí thuật' : 'Công pháp'}] ${c.ten}</b> <span class="badge">${layCanhGioiDef(c.canhGioi).ten}</span> ${Number(c.canhGioi) === state.canhGioi ? '<span class="badge hl-green">Phù hợp cảnh giới</span>' : ''} ${c.loai === 'BI_THUAT' ? '<span class="badge hl-gold">Bí thuật</span>' : ''} <span class="hl-gold">(${(c.gia || 0).toLocaleString()} LT)</span><div class="hl-realm">${moTaCongPhapNgan(c)}</div><div class="muted">${c.moTa}</div></div>
         <button class="btn btn-sm btn-primary" onclick="muaVatPham('cong_phap', '${c.id}')">Lĩnh ngộ</button>
       </div>`);
     }
@@ -6527,6 +6788,8 @@ function veCotPhai() {
       .filter(v => v.loai === 'linh_thao' && soLuongVat(v.id) > 0)
       .sort((a, b) => (a.canhGioi ?? 0) - (b.canhGioi ?? 0) || a.ten.localeCompare(b.ten, 'vi'));
     const tiLeDotNhapNam = (Math.max(0.01, (oNha ? 0.015 : 0.065) - (state.dongPhu.cap - 1) * 0.007) * 100).toFixed(1);
+    // v1.2: Kho Động Phủ (nguyên liệu tự động dồn vào khi túi đầy)
+    const dsKho = Object.entries(state.khoDo || {}).filter(([, sl]) => sl > 0);
 
     el.innerHTML = `
       <div class="sub-section">
@@ -6546,6 +6809,72 @@ function veCotPhai() {
                    ⬆️ Nâng cấp Tụ Linh & Hộ Phủ Trận (${giaNangCap.toLocaleString()} LT${state.dongPhu.linhDien.length < MAX_LINH_DIEN ? ' · +1 ô Linh Điền' : ''})
                  </button>
                  <button class="btn btn-sm btn-danger" onclick="phaHuyDongPhu()">💥 Phá hủy Động Phủ</button>
+               </div>`
+        }
+      </div>
+
+      <div class="sub-section">
+        <div class="sub-title">📦 Kho Động Phủ (${dsKho.length} loại vật phẩm)</div>
+        <p class="muted" style="margin-top:0">Khi túi trữ vật đầy, linh thảo / vật liệu / yêu đan / phù lục sẽ <b>tự động</b> được đưa vào kho này thay vì bị mất. Lấy ra khi cần luyện đan, trồng trọt hoặc bán.</p>
+        <div class="row-actions" style="margin:6px 0">
+          <button class="btn btn-sm" onclick="guiHetNguyenLieuVaoKho()">📥 Gửi hết nguyên liệu trong túi</button>
+          <button class="btn btn-sm btn-primary" onclick="layHetKhoRaTui()" ${dsKho.length ? '' : 'disabled'}>📤 Lấy hết kho ra túi</button>
+        </div>
+        ${
+          dsKho.length === 0
+            ? '<div class="muted">Kho đang trống.</div>'
+            : dsKho
+                .map(([key, sl]) => {
+                  const vp = layVatPhamDef(key) || { ten: key, loai: 'vat_lieu', moTa: '' };
+                  const pc = layPhamChatVatPham(key);
+                  return `<div class="card-row">
+                    <div>
+                      <b>${escapeHtml(vp.ten)}</b> <span class="badge ${pc.cls}">${pc.ten}</span> <span class="hl-gold">x${sl}</span>
+                      <div class="muted">${escapeHtml(vp.moTa || '')}</div>
+                    </div>
+                    <div class="row-actions">
+                      <button class="btn btn-sm" onclick="layMotTuKho('${key}', 1)">Lấy 1</button>
+                      <button class="btn btn-sm btn-primary" onclick="layMotTuKho('${key}', ${sl})">Lấy hết</button>
+                    </div>
+                  </div>`;
+                })
+                .join('')
+        }
+      </div>
+
+      <div class="sub-section">
+        <div class="sub-title">🔆 Bản Mệnh Pháp Bảo (Đan Hỏa)</div>
+        ${
+          state.canhGioi < 3
+            ? '<div class="muted">Cần đạt 【Kết Đan】 để dùng Đan Hỏa tế luyện bản mệnh pháp bảo.</div>'
+            : !state.phapBao
+            ? '<div class="muted">Hãy trang bị một Pháp bảo trước (tab 🎒 Túi Đồ), rồi tế luyện nó thành bản mệnh.</div>'
+            : state.banMenh && state.banMenh.key === state.phapBao
+            ? (() => {
+                const pb = layVatPhamDef(state.phapBao);
+                const cap = state.banMenh.cap || 0;
+                const gia = Math.round(800 * (cap + 1));
+                return `<div class="stat-row"><span>Đang liên kết:</span> <b>${escapeHtml(pb.ten)}</b> <span class="badge">Cấp ${cap}/5</span></div>
+                  <div class="stat-row"><span>Gia trì uy lực pháp bảo:</span> <b class="hl-green">+${cap * 8}%</b></div>
+                  ${(() => {
+                    const af = Array.isArray(state.banMenh.affixes) ? state.banMenh.affixes : [];
+                    if (af.length === 0) return '<div class="muted">Chưa có từ điều — mỗi cấp tôi luyện nhận thêm 1 từ điều ngẫu nhiên.</div>';
+                    return `<div class="stat-row" style="display:block"><span>Từ điều (${af.length}):</span>${af
+                      .map(a => `<div class="muted">• ${escapeHtml(a.ten)} <b class="hl-green">+${Math.round((a.pct || 0) * 100)}%</b></div>`)
+                      .join('')}</div>`;
+                  })()}
+                  <div class="row-actions" style="margin:6px 0">
+                    <button class="btn btn-sm ${cap >= 5 ? '' : 'btn-primary'}" onclick="nangCapBanMenh()" ${cap >= 5 ? 'disabled' : ''}>
+                      ${cap >= 5 ? 'Đã đạt cấp tối đa' : (() => {
+                        const cp = typeof v14ChiPhiBanMenh === 'function' ? v14ChiPhiBanMenh(cap) : { lt: gia, yeuDan: 0 };
+                        return `🔆 Tôi luyện lên cấp ${cap + 1} (${cp.lt.toLocaleString()} LT${cp.yeuDan ? ` + ${cp.yeuDan} Yêu đan` : ''} · 6 tháng)`;
+                      })()}
+                    </button>
+                  </div>`;
+              })()
+            : `<div class="muted">Tế luyện <b>${escapeHtml((layVatPhamDef(state.phapBao) || {}).ten || '')}</b> thành bản mệnh để nhận +8%/cấp uy lực pháp bảo (tối đa 5 cấp).</div>
+               <div class="row-actions" style="margin:6px 0">
+                 <button class="btn btn-sm btn-primary" onclick="teLuyenBanMenh()">🔆 Tế luyện thành Bản Mệnh (500 LT · 6 tháng)</button>
                </div>`
         }
       </div>
@@ -6584,7 +6913,7 @@ function veCotPhai() {
               <div class="card-row">
                 <div>
                   <b>Ô #${idx + 1}: ${vp ? vp.ten : o.itemId}</b> <span class="badge">${bac.tenBac}</span>
-                  <div class="${sl > 0 ? 'hl-green' : 'muted'}">${o.namTrong}/${bac.namChin} năm (${pct}%)${sl > 0 ? ` → Chín (x${sl} gốc)` : ' · Đang sinh trưởng'}</div>
+                  <div class="${sl > 0 ? 'hl-green' : 'muted'}">${Math.min(o.namTrong || 0, bac.namChin)}/${bac.namChin} năm (${pct}%)${sl > 0 ? ` → Đã chín (x${sl} gốc)` : ' · Đang sinh trưởng'}</div>
                 </div>
                 <button class="btn btn-sm ${sl > 0 ? 'btn-primary' : ''}" onclick="thuHoachLinhDien(${idx})" ${oNha && sl > 0 ? '' : 'disabled'}>
                   ${sl > 0 ? `🌿 Thu hoạch (x${sl})` : `Chưa chín (${pct}%)`}
@@ -6599,11 +6928,16 @@ function veCotPhai() {
         ${window.PN_DATA.danPhuong
           .filter(dp => state.danPhuongDaHoc.includes(dp.id))
           .map(dp => {
+            const thieu = dp.nguyenLieu.filter(n => soLuongVat(n.id) < n.soLuong);
             const nlText = dp.nguyenLieu.map(n => `${(layVatPhamDef(n.id) || {}).ten || n.id} (${soLuongVat(n.id)}/${n.soLuong})`).join(' + ');
+            const lyDoKhoa = !oNha ? 'Cần ở Động Phủ' : thieu.length > 0 ? `Thiếu: ${thieu.map(n => (layVatPhamDef(n.id) || {}).ten || n.id).join(', ')}` : '';
+            const coThe = oNha && thieu.length === 0;
             return `
               <div class="card-row">
-                <div><b>${dp.ten}</b><div class="muted">Cần: ${nlText} → ${dp.soLuongRa} viên</div></div>
-                <button class="btn btn-sm btn-primary" onclick="luyenDan('${dp.id}')" ${oNha ? '' : 'disabled'}>🔥 Khai lò</button>
+                <div><b>${dp.ten}</b><div class="muted">Cần: ${nlText} → ${dp.soLuongRa} viên${coThe ? ' <span class="hl-green">· Đủ nguyên liệu</span>' : ''}</div></div>
+                <button class="btn btn-sm ${coThe ? 'btn-primary' : ''}" onclick="luyenDan('${dp.id}')" ${coThe ? '' : `disabled title="${escapeHtml(lyDoKhoa)}"`}>
+                  ${coThe ? '🔥 Khai lò' : `🔒 ${thieu.length > 0 ? 'Thiếu NL' : 'Cần Động Phủ'}`}
+                </button>
               </div>`;
           })
           .join('')}
@@ -6683,6 +7017,8 @@ function veCotPhai() {
             <input id="filter-shop" type="text" placeholder="Tìm vật phẩm trong túi để bán..." value="${escapeHtml(uiFilter.shopQuery)}" oninput="uiFilter.shopQuery=this.value; capNhatDanhSachShop()" />
             <button class="btn btn-sm" onclick="chonTatCaBanDo()">${daChonHet ? '⬜ Bỏ chọn tất cả' : '☑️ Chọn tất cả'}</button>
             <button class="btn btn-sm" onclick="chonHaPhamBanDo()">☑️ Chọn Hạ phẩm</button>
+            <button class="btn btn-sm" onclick="chonTrungPhamBanDo()">☑️ Chọn Trung phẩm</button>
+            <button class="btn btn-sm" onclick="chonNguyenLieuThuaBanDo()" title="Chọn linh thảo/vật liệu không cần cho các đan phương đã học">☑️ Chọn nguyên liệu thừa</button>
             <button class="btn btn-sm btn-primary" onclick="banNhanhDaChon()" ${selValid.length > 0 ? '' : 'disabled'}>
               ⚡ Bán đồ nhanh (${selValid.length} loại · +${tongLtChon.toLocaleString()} LT)
             </button>
@@ -6709,13 +7045,21 @@ function veCotPhai() {
       }
 
       bodyHtml = `
-        <div class="sub-title">${vung.coPhuongThi ? `🏮 Vạn Bảo Lâu — ${vung.ten}` : `🏪 Tạp Hóa Du Phương — ${vung.ten}`} (Phiên chợ Năm ${state.nam} · Cảnh giới ≤ ${layCanhGioiDef(Math.min(9, maxCg)).ten})</div>
+        <div class="sub-title">${vung.coPhuongThi ? `🏮 Vạn Bảo Lâu — ${vung.ten}` : `🏪 Tạp Hóa Du Phương — ${vung.ten}`} (Phiên chợ Năm ${state.nam} · Hàng phù hợp 【${layCanhGioiDef(Math.min(9, state.canhGioi)).ten}】${maxCg > state.canhGioi ? ' · có bày hàng vượt cấp' : ''})</div>
         ${vung.coPhuongThi ? '' : '<p class="muted" style="margin-top:0">Địa điểm này chưa có Phường Thị lớn — sạp hàng du phương số lượng ít hơn.</p>'}
         <div class="filter-bar">
           <button class="btn btn-sm ${shopTab === 'mua' ? 'btn-primary' : ''}" onclick="uiFilter.shopTab='mua'; veCotPhai()">🛍️ Mua Hàng</button>
           <button class="btn btn-sm ${shopTab === 'ban' ? 'btn-primary' : ''}" onclick="uiFilter.shopTab='ban'; veCotPhai()">💰 Quầy Thu Mua (${dsBanAll.length} loại)</button>
         </div>
         ${tabBody}`;
+    }
+
+    // Sub-tab 1.5: ĐẤU GIÁ PHƯỜNG THỊ (v1.3)
+    else if (diaDiemSubTab === 'dau_gia' && vung.coPhuongThi) {
+      bodyHtml =
+        typeof renderDauGiaHtml === 'function'
+          ? renderDauGiaHtml(vung)
+          : '<div class="muted">Đang tải phiên đấu giá...</div>';
     }
 
     // Sub-tab 2: TÔNG MÔN / THẾ LỰC (Tác giả: Gemini (Antigravity))
@@ -6925,6 +7269,7 @@ function veCotPhai() {
               </div>
             </div>
             ${subContent}
+            ${typeof renderNhiemVuTruongLao === 'function' ? renderNhiemVuTruongLao(curTm) : ''}
           </div>`;
       }
 
@@ -7009,6 +7354,7 @@ function veCotPhai() {
         <div class="filter-bar">
           <button class="btn btn-sm ${diaDiemSubTab === 'kham_pha' ? 'btn-primary' : ''}" onclick="chonDiaDiemSubTab('kham_pha')">🏞️ Khám Phá (${dsDiaDiem.length})</button>
           <button class="btn btn-sm ${diaDiemSubTab === 'cua_hang' ? 'btn-primary' : ''}" onclick="chonDiaDiemSubTab('cua_hang')">🏮 Cửa Hàng</button>
+          ${vung.coPhuongThi ? `<button class="btn btn-sm ${diaDiemSubTab === 'dau_gia' ? 'btn-primary' : ''}" onclick="chonDiaDiemSubTab('dau_gia')">🎪 Đấu Giá</button>` : ''}
           <button class="btn btn-sm ${diaDiemSubTab === 'tong_mon' ? 'btn-primary' : ''}" onclick="chonDiaDiemSubTab('tong_mon')">🏛️ Tông Môn (${dsTmTaiVung.length})</button>
           <button class="btn btn-sm ${diaDiemSubTab === 'nha_npc' ? 'btn-primary' : ''}" onclick="chonDiaDiemSubTab('nha_npc')">👥 Tu Sĩ Tại Đây (${dsNpcTaiVung.length})</button>
         </div>
@@ -7187,7 +7533,28 @@ function veCotPhai() {
   // TAB 5: BẢN ĐỒ (BẢN ĐỒ NHÂN GIỚI TƯƠNG TÁC + 40 VÙNG ĐẤT)
   else if (activeTab === 'ban_do') {
     const q = uiFilter.mapQuery.trim().toLowerCase();
-    const dsVung = window.PN_DATA.vungDat.filter(v => !q || v.ten.toLowerCase().includes(q) || (v.moTa || '').toLowerCase().includes(q));
+    const dsVung = window.PN_DATA.vungDat.filter(v => {
+      // v1.2: bộ lọc "phù hợp cảnh giới" & "có phường thị"
+      if (uiFilter.mapOnlySuitable) {
+        const cgy = Number(v.canhGioiYeuCau || 0);
+        if (cgy > state.canhGioi) return false;
+        if (cgy < Math.max(0, state.canhGioi - 2)) return false;
+      }
+      if (uiFilter.mapOnlyMarket && !v.coPhuongThi) return false;
+      if (Number(uiFilter.mapCg) >= 0 && Number(v.canhGioiYeuCau || 0) !== Number(uiFilter.mapCg)) return false;
+      if (!q) return true;
+      return v.ten.toLowerCase().includes(q) || (v.moTa || '').toLowerCase().includes(q);
+    });
+    // v1.3: danh sách bí cảnh phù hợp cảnh giới trên toàn giới
+    const dsBiCanhPhuHop = (window.PN_DATA.biCanh || [])
+      .filter(b => {
+        const cgMin = Number(b.canhGioiMin || 0);
+        const cgMax = Number(b.canhGioiMax || 9);
+        if (Number(uiFilter.mapCg) >= 0) return Number(uiFilter.mapCg) >= cgMin && Number(uiFilter.mapCg) <= cgMax;
+        return state.canhGioi >= cgMin && state.canhGioi <= cgMax;
+      })
+      .sort((a, b) => (layVungDef(a.vungId).linhKhi || 1) - (layVungDef(b.vungId).linhKhi || 1))
+      .slice(0, 8);
     const mapLocId = layMapLocTuState();
     const mapLocObj = (window.NK_MAP_DATA?.locations || []).find(l => l.id === mapLocId);
     const evNodes = window.NhanGioiMap && window.NhanGioiMap.getEventNodes ? window.NhanGioiMap.getEventNodes() : [];
@@ -7223,9 +7590,48 @@ function veCotPhai() {
       </div>
 
       <div class="sub-section">
+        <div class="sub-title">🌌 Bí Cảnh Phù Hợp Cảnh Giới (${dsBiCanhPhuHop.length})</div>
+        <p class="muted" style="margin-top:0">Các bí cảnh có phạm vi cảnh giới bao gồm cảnh giới hiện tại của bạn. Đi tới đúng vùng rồi mới vào được.</p>
+        ${
+          dsBiCanhPhuHop.length === 0
+            ? '<div class="muted">Không có bí cảnh phù hợp — hãy thử vùng khác hoặc nâng cảnh giới.</div>'
+            : dsBiCanhPhuHop
+                .map(b => {
+                  const vBc = layVungDef(b.vungId);
+                  const dangO = vBc.id === state.vungHienTai;
+                  const conLai = typeof v16ConLaiBiCanh === 'function' ? v16ConLaiBiCanh(b.id) : 0;
+                  const coTheVao = dangO && conLai <= 0;
+                  return `<div class="card-row">
+                    <div>
+                      <b>${escapeHtml(b.ten)}</b> <span class="badge">${layCanhGioiDef(b.canhGioiMin).ten}–${layCanhGioiDef(b.canhGioiMax).ten}</span> <span class="badge">${escapeHtml(vBc.ten)} · LK x${vBc.linhKhi}</span>
+                      <div class="muted">Phí ${Number(b.phiLinhThach || 0).toLocaleString('vi-VN')} LT · ${b.namTon} năm · ${escapeHtml(typeof v16NhanChuKy === 'function' ? v16NhanChuKy(b) : b.chuKyMo || 'Thường trực')}${conLai > 0 ? ` · <b class="hl-danger">Mở lại sau ${conLai} năm</b>` : ''}</div>
+                    </div>
+                    <div class="row-actions">
+                      ${dangO
+                        ? `<button class="btn btn-sm ${coTheVao ? 'btn-primary' : ''}" onclick="thamHiemBiCanh('${b.id}')" ${coTheVao ? '' : `disabled title="Bí cảnh đang đóng (mở lại sau ${conLai} năm)"`}>🌌 Vào bí cảnh</button>`
+                        : `<button class="btn btn-sm" onclick="diChuyenVung('${vBc.id}')">🚀 Đi tới (${tinhThangDiChuyen(vBc.id)} tháng)</button>
+                           <button class="btn btn-sm" disabled title="Cần tới ${escapeHtml(vBc.ten)} trước">🌌 Vào</button>`}
+                    </div>
+                  </div>`;
+                })
+                .join('')
+        }
+      </div>
+
+      <div class="sub-section">
         <div class="sub-title">🧭 Danh Sách Toàn Tu Tiên Giới (${dsVung.length} vùng)</div>
         <div class="filter-bar">
           <input id="filter-map" type="text" placeholder="Tìm vùng đất (Việt Quốc, Loạn Tinh Hải, Linh Giới...)" value="${escapeHtml(uiFilter.mapQuery)}" oninput="uiFilter.mapQuery=this.value; veCotPhai()" />
+          <label class="btn btn-sm" style="cursor:pointer;display:inline-flex;gap:5px;align-items:center">
+            <input type="checkbox" style="width:auto" ${uiFilter.mapOnlySuitable ? 'checked' : ''} onchange="uiFilter.mapOnlySuitable=this.checked; veCotPhai()" /> Chỉ vùng phù hợp cảnh giới
+          </label>
+          <label class="btn btn-sm" style="cursor:pointer;display:inline-flex;gap:5px;align-items:center">
+            <input type="checkbox" style="width:auto" ${uiFilter.mapOnlyMarket ? 'checked' : ''} onchange="uiFilter.mapOnlyMarket=this.checked; veCotPhai()" /> Chỉ vùng có Phường Thị
+          </label>
+          <select style="width:auto" onchange="uiFilter.mapCg=Number(this.value); veCotPhai()" title="Lọc theo cảnh giới yêu cầu của vùng">
+            <option value="-1" ${Number(uiFilter.mapCg) < 0 ? 'selected' : ''}>Cảnh giới: Tất cả</option>
+            ${[0,1,2,3,4,5,6,7,8,9].map(cg => `<option value="${cg}" ${Number(uiFilter.mapCg) === cg ? 'selected' : ''}>${layCanhGioiDef(cg).ten}</option>`).join('')}
+          </select>
         </div>
         ${dsVung
           .map(v => {
@@ -7315,7 +7721,7 @@ function veCotPhai() {
                 <div class="hl-realm">${moTaCongPhapNgan(cp)}</div>
                 <div class="muted">${cp.moTa}</div>
               </div>
-              <button class="btn btn-sm ${dangDung ? '' : 'btn-primary'}" onclick="trangBiCongPhapHoacBiThuat('${cid}')">
+              <button class="btn btn-sm ${dangDung ? '' : 'btn-primary'}" onclick="trangBiCongPhapHoacBiThuat('${cid}')" ${!isBt && dangDung ? 'disabled title="Đang tu luyện công pháp này"' : ''}>
                 ${isBt ? (dangDung ? 'Gỡ bỏ' : 'Gắn phụ') : dangDung ? 'Đang tu' : 'Chuyển công'}
               </button>
             </div>`;

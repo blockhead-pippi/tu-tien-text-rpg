@@ -5,6 +5,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Phàm Nhân Tu Tiên — Sandbox Biên Niên (Text Game)</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23191b20'/%3E%3Ctext x='32' y='45' font-size='36' text-anchor='middle' fill='%23d4a359'%3E%E2%98%AF%3C/text%3E%3C/svg%3E" />
+  <meta name="theme-color" content="#121316" />
   <style>
     /* ==========================================
        1. HỆ THỐNG BIẾN MÀU: DARK THEME & LIGHT THEME
@@ -418,7 +420,7 @@
       background: rgba(0, 0, 0, 0.65);
       display: none;
       place-items: center;
-      z-index: 100;
+      z-index: 9600;
       padding: 16px;
     }
 
@@ -459,6 +461,86 @@
       font-size: 13px;
       margin: 10px 0;
     }
+
+    /* ==========================================
+       7. UPDATE v1.1: TOAST, HƯỚNG DẪN, GỢI Ý
+       ========================================== */
+    .toast-wrap {
+      position: fixed;
+      right: 18px;
+      bottom: 78px;
+      z-index: 320;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+      max-width: min(420px, 92vw);
+    }
+
+    .toast {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      box-shadow: var(--shadow);
+      animation: toast-in 0.22s ease-out;
+      pointer-events: auto;
+    }
+
+    .toast.toast-tot { border-left-color: var(--green); }
+    .toast.toast-canh_bao { border-left-color: var(--gold); }
+    .toast.toast-loi { border-left-color: var(--danger); }
+    .toast.toast-out { opacity: 0; transform: translateY(6px); transition: all 0.35s ease; }
+
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .hint-line {
+      margin: 6px 0 0;
+      padding: 7px 10px;
+      border: 1px dashed var(--border);
+      border-radius: 5px;
+      background: var(--bg-card);
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .hint-line b { color: var(--text); }
+    .hint-line .hl-warn { color: var(--gold); }
+    .hint-line .hl-danger { color: var(--danger); }
+
+    .guide-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      margin: 8px 0 4px;
+    }
+
+    .guide-item {
+      display: flex;
+      gap: 9px;
+      align-items: flex-start;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    .guide-item .g-ico { font-size: 16px; line-height: 1.3; }
+    .guide-item.done { border-color: var(--green); }
+    .guide-item.todo { border-color: var(--accent); }
+
+    .guide-item .g-body { flex: 1; min-width: 0; }
+    .guide-item .g-title { font-weight: bold; }
+    .guide-item .g-desc { color: var(--text-muted); font-size: 12.5px; }
+    .guide-item .g-link { margin-left: 6px; }
   </style>
   <link rel="stylesheet" href="map.css" />
 </head>
@@ -469,6 +551,8 @@
     <div class="brand">☯ PHÀM NHÂN TU TIÊN — SANDBOX BIÊN NIÊN</div>
     <div class="top-actions">
       <button id="btn-theme" class="btn btn-sm" onclick="doiTheme()">☀️ Đổi sang Light Theme</button>
+      <button class="btn btn-sm" onclick="moHuongDan()">❓ Hướng dẫn</button>
+      <button class="btn btn-sm" onclick="moThanhTuu()">📊 Thành tựu</button>
       <button class="btn btn-sm" onclick="xuatSaveFile()">💾 Xuất Save (.json)</button>
       <label class="btn btn-sm" style="cursor:pointer">
         📂 Nhập Save
@@ -504,9 +588,9 @@
   </main>
 
   <!-- MODAL: ROLL NHÂN VẬT & KHỞI TẠO KIẾP MỚI (SANDBOX) -->
-  <div id="modal-newgame" class="modal-backdrop">
+  <div id="modal-newgame" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-newgame-title">
     <div class="modal-box">
-      <div class="panel-title">🎲 TẠO NHÂN VẬT NGẪU NHIÊN — BƯỚC VÀO TU TIÊN GIỚI</div>
+      <div class="panel-title" id="modal-newgame-title">🎲 TẠO NHÂN VẬT NGẪU NHIÊN — BƯỚC VÀO TU TIÊN GIỚI</div>
 
       <div class="roll-grid">
         <div class="form-group">
@@ -539,9 +623,45 @@
     </div>
   </div>
 
+  <!-- MODAL: HƯỚNG DẪN / MỤC TIÊU TU TIÊN (v1.1) -->
+  <div id="modal-guide" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-guide-title">
+    <div class="modal-box">
+      <div class="panel-title" id="modal-guide-title">📘 HƯỚNG DẪN & MỤC TIÊU TU TIÊN</div>
+      <p class="muted" style="margin:4px 0 8px">Đây là các mốc quan trọng của một kiếp tu tiên. Mục <b>đang mở</b> là việc nên làm ngay; mục đã xong sẽ được đánh dấu ✓.</p>
+      <div id="guide-content" class="guide-grid"></div>
+      <div class="row-actions" style="justify-content:flex-end;margin-top:12px">
+        <button type="button" class="btn btn-sm btn-primary" onclick="dongHuongDan()">Đã hiểu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: XÁC NHẬN ĐỘT PHÁ ĐẠI CẢNH GIỚI (v1.2) -->
+  <div id="modal-confirm-dotpha" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-confirm-dotpha-title">
+    <div class="modal-box">
+      <div class="panel-title" id="modal-confirm-dotpha-title">⚡ XÁC NHẬN XUNG KÍCH ĐẠI CẢNH GIỚI</div>
+      <div id="confirm-dotpha-body"></div>
+      <div class="row-actions" style="justify-content:flex-end;margin-top:12px">
+        <button type="button" class="btn" onclick="dongXacNhanDotPha()">Hủy</button>
+        <button type="button" class="btn btn-primary" onclick="xacNhanDotPhaThatSu()">Ta đã quyết</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast-wrap" class="toast-wrap" aria-live="polite" aria-atomic="false"></div>
+
   <script src="data.js"></script>
   <script src="map_data.js"></script>
   <script src="game.js"></script>
   <script src="map.js"></script>
+  <script src="update_v1_1.js"></script>
+  <script src="update_v1_2.js"></script>
+  <script src="update_v1_3.js"></script>
+  <script src="update_v1_4.js"></script>
+  <script src="update_v1_5.js"></script>
+<script src="update_v1_6.js"></script>
+<script src="update_v1_6_1.js"></script>
+<script src="update_v1_7.js"></script>
+<script src="update_v1_8.js"></script>
 </body>
 </html>
