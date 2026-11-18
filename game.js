@@ -1,9 +1,8 @@
 // Tác giả: Gemini (Antigravity)
-// Engine xử lý trung tâm: Phàm Nhân Tu Tiên — Sandbox Biên Niên 10 Cảnh Giới (Offline-first + AI Hybrid)
+// Engine xử lý trung tâm: Phàm Nhân Tu Tiên — Sandbox Biên Niên 10 Cảnh Giới (Offline hoàn toàn)
 
 const SAVE_KEY = 'pn_tu_tien_save_v2';
 const THEME_KEY = 'pn_tu_tien_theme_v1';
-const AI_CFG_KEY = 'pn_tu_tien_ai_cfg_v1';
 const MAX_LINH_DIEN = 9;
 const MAX_BI_THUAT = 3;
 const MAX_TUI_DO_O = 100;
@@ -13,7 +12,6 @@ let activeTab = 'dong_phu'; // 'dong_phu' | 'dia_diem' | 'npc' | 'ban_do' | 'tui
 let diaDiemSubTab = 'kham_pha'; // 'kham_pha' | 'cua_hang' | 'tong_mon' | 'nha_npc'
 let selectedNpcId = null;
 let shopSellSelected = new Set();
-let aiBusy = false;
 
 const uiFilter = {
   shopQuery: '',
@@ -27,15 +25,6 @@ const uiFilter = {
   nhaQuery: '',
   mapQuery: '',
   bagQuery: ''
-};
-
-let aiConfig = {
-  provider: 'gemini',
-  geminiKey: '',
-  geminiModel: 'gemini-2.5-flash',
-  openaiKey: '',
-  openaiBaseUrl: 'https://openrouter.ai/api/v1',
-  openaiModel: 'openai/gpt-4o-mini'
 };
 
 // ==========================================
@@ -64,23 +53,6 @@ function rollTenTheoGioiTinh(gioiTinh = 'nam') {
   const tenPool = gioiTinh === 'nu' ? roll.tenNuMau : roll.tenNamMau;
   const ten = pickRandom(tenPool) || 'Thanh Phong';
   return `${ho} ${ten}`;
-}
-
-function taiCauHinhAI() {
-  try {
-    const raw = localStorage.getItem(AI_CFG_KEY);
-    if (raw) aiConfig = { ...aiConfig, ...JSON.parse(raw) };
-  } catch (e) {
-    console.warn('Không đọc được cấu hình AI:', e);
-  }
-}
-
-function luuCauHinhAI() {
-  try {
-    localStorage.setItem(AI_CFG_KEY, JSON.stringify(aiConfig));
-  } catch (e) {
-    console.warn('Không lưu được cấu hình AI:', e);
-  }
 }
 
 const NPC_TU_CHAT = [
@@ -5931,157 +5903,52 @@ function danhCuopNpc(npcId) {
   });
 }
 
-function layKeyHienTai() {
-  return aiConfig.provider === 'gemini' ? aiConfig.geminiKey.trim() : aiConfig.openaiKey.trim();
-}
-
-async function goiAiJson(systemPrompt, userPrompt) {
-  const key = layKeyHienTai();
-  if (!key) throw new Error('Chưa nhập API Key trong [⚙️ Cài đặt AI].');
-
-  if (aiConfig.provider === 'gemini') {
-    const model = (aiConfig.geminiModel || 'gemini-2.5-flash').trim();
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-        generationConfig: { temperature: 0.85, responseMimeType: 'application/json' }
-      })
-    });
-    if (!res.ok) throw new Error(`Gemini API lỗi (${res.status}): ${(await res.text()).slice(0, 180)}`);
-    const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    return JSON.parse(lamSachJson(text));
-  }
-
-  const baseUrl = (aiConfig.openaiBaseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
-  const model = (aiConfig.openaiModel || 'openai/gpt-4o-mini').trim();
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-    body: JSON.stringify({
-      model,
-      temperature: 0.85,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ]
-    })
-  });
-  if (!res.ok) throw new Error(`OpenAI/OpenRouter lỗi (${res.status}): ${(await res.text()).slice(0, 180)}`);
-  const data = await res.json();
-  return JSON.parse(lamSachJson(data?.choices?.[0]?.message?.content || '{}'));
-}
-
-function lamSachJson(str) {
-  return String(str).replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '').trim();
-}
-
-async function lichLuyenAI() {
-  if (state.ketThuc || state.tranHienTai || state.suKienHienTai || aiBusy) return;
-  if (!layKeyHienTai()) {
-    ghiNhatKy('⚠️ Chưa gắn API Key, chuyển sang Sự kiện Lịch luyện Offline.', 'canh_bao');
-    lichLuyenOffline();
-    return;
-  }
-
-  aiBusy = true;
-  veGiaoDien();
-
-  const poolVat = window.PN_DATA.vatPham
-    .filter(v => (v.canhGioi ?? v.bac ?? 1) <= state.canhGioi + 1)
-    .slice(0, 35)
-    .map(v => `${v.id} (${v.ten})`)
-    .join(', ');
-
-  const sys = `Bạn là Đạo Diễn game sandbox thế giới Phàm Nhân Tu Tiên (người chơi là tu sĩ tự do, KHÔNG phải Hàn Lập).
-Chỉ trả về DUY NHẤT 1 JSON hợp lệ:
-{
-  "ten": "Tiêu đề sự kiện",
-  "text": "Mô tả tình huống 3-5 câu sát thế giới PNTT",
-  "choices": [
-    { "text": "Lựa chọn 1", "effects": [{ "tuVi": 200, "linhThach": -30, "hp": -10, "addItem": "thao_hoang_tinh", "log": "Kết quả..." }] },
-    { "text": "Lựa chọn 2 (giao chiến)", "effects": [{ "combat": { "ten": "Đối thủ", "hp": ${Math.round(tinhHpMax() * 0.9)}, "congKich": ${Math.round(tinhCongKich() * 0.9)}, "phongThu": ${Math.round(tinhPhongThu() * 0.8)}, "linhThach": ${Math.round(60 * Math.pow(2.4, state.canhGioi))} }, "log": "Ra tay!" }] },
-    { "text": "Lựa chọn 3 (rút lui)", "effects": [{ "tuVi": ${Math.round(tinhTocDoTuLuyenNam() * 0.4)}, "log": "Cẩn trọng rút lui." }] }
-  ]
-}
-Lưu ý: tuVi thưởng trong [-${Math.round(tinhTocDoTuLuyenNam() * 0.4)}, +${Math.round(tinhTocDoTuLuyenNam() * 1.4)}]. Nếu dùng addItem, chỉ chọn trong: ${poolVat}.`;
-
-  const usr = `Tu sĩ: ${state.ten}, Cảnh giới: ${tenCanhGioiDayDu()}, Khí huyết: ${state.hp}/${tinhHpMax()}, Linh thạch: ${state.linhThach}, Vùng: ${layVungDef().ten} (${layVungDef().moTa}). Hãy tạo 1 sự kiện kỳ ngộ.`;
-
-  try {
-    tienThoiGian(2);
-    const sk = await goiAiJson(sys, usr);
-    if (sk && sk.ten && sk.text && Array.isArray(sk.choices)) {
-      state.suKienHienTai = sk;
-      ghiNhatKy(`✨ [AI Đạo Diễn] Kỳ ngộ tại ${layVungDef().ten}: 【${sk.ten}】`, 'tot');
-    } else {
-      throw new Error('JSON thiếu trường bắt buộc');
-    }
-  } catch (err) {
-    ghiNhatKy(`⚠️ Lỗi gọi AI (${err.message}). Chuyển sang Offline.`, 'canh_bao');
-    lichLuyenOffline();
-  } finally {
-    aiBusy = false;
-    luuGame();
-    veGiaoDien();
-  }
-}
-
-async function chatVoiNpc(npcId, loiNoi) {
+// Đối thoại NPC hoàn toàn offline theo tính cách, hảo cảm và bối cảnh vùng (Tác giả: Gemini (Antigravity))
+function chatVoiNpc(npcId, loiNoi) {
   const npc = state.npcs[npcId];
-  if (!npc || !npc.conSong || !loiNoi.trim() || aiBusy) return;
+  if (!npc || !npc.conSong || !loiNoi.trim()) return;
   const cauHoi = loiNoi.trim();
+  const q = cauHoi.toLowerCase();
+  const vungTen = layVungDef(npc.vungId).ten;
+  const cgNpc = tenCanhGioiDayDu(npc.canhGioi, npc.tieuCanh || 0);
+  const cungCho = npc.vungId === state.vungHienTai;
+  const hc = npc.haoCam || 0;
 
-  if (!layKeyHienTai()) {
-    thayDoiHaoCam(npc, 2, true);
-    const phanHoi = `${npc.ten} khẽ gật đầu: "Đạo hữu ${state.ten}, tu tiên giới tại ${layVungDef(npc.vungId).ten} ẩn chứa nhiều hung hiểm. Khi gắn API Key ở [⚙️ Cài đặt AI], ta và đạo hữu có thể đối thoại sâu hơn!"`;
-    ghiKyUcNpc(npc, `Trò chuyện với ${state.ten}: "${cauHoi}"`);
-    ghiNhatKy(`💬 Bạn nói với [${npc.ten}]: "${cauHoi}"\n👉 ${phanHoi}`, 'thuong');
-    luuGame();
-    veGiaoDien();
-    return;
+  let deltaHc = 1;
+  let phanHoi = '';
+
+  if (hc <= -25) {
+    deltaHc = 0;
+    phanHoi = `${npc.ten} hừ lạnh một tiếng: "Giữa ngươi và ta vốn chẳng có gì để nói. Tốt nhất giữ khoảng cách tại ${vungTen}!"`;
+  } else if (/tu luyện|công pháp|đột phá|cảnh giới|chỉ giáo/.test(q)) {
+    deltaHc = 2;
+    phanHoi = `${npc.ten} vuốt cằm suy ngẫm: "Tu đạo quý ở bền bỉ, ta hiện ở cảnh giới ${cgNpc}, cảm nhận rõ nếu linh căn chưa thuần thì phải chọn công pháp hợp hệ và tích lũy đan dược đầy đủ."`;
+  } else if (/bảo vật|bí cảnh|tìm|kho báu|linh thạch|địa điểm/.test(q)) {
+    deltaHc = 1;
+    phanHoi = `${npc.ten} hạ thấp giọng: "Nghe đồn quanh ${vungTen} thỉnh thoảng xuất hiện điểm cơ duyên và cổ động trên bản đồ. Đạo hữu muốn thu hoạch hãy chuẩn bị sẵn phù lục hộ thân."`;
+  } else if (/chào|hỏi thăm|bằng hữu|đạo hữu|kết giao/.test(q)) {
+    deltaHc = hc >= 40 ? 3 : 2;
+    phanHoi = `${npc.ten} mỉm cười ôm quyền: "${cungCho ? 'Hữu duyên tương ngộ tại ' + vungTen : 'Truyền âm phù đã nhận rõ'}, đạo hữu ${state.ten} bảo trọng tiên đồ!"`;
+  } else {
+    const mauTheoTinhCach = {
+      chinh_truc: `"Hành tẩu tu tiên giới phải giữ vững đạo tâm, chớ vì lợi nhỏ mà chuốc lấy nhân quả xấu tại ${vungTen}."`,
+      than_trong: `"Thế sự khó lường, ta ở ${vungTen} bao năm vẫn luôn chuẩn bị sẵn đường lui trước khi động thủ."`,
+      cuong_ngao: `"Kẻ mạnh mới có quyền định đoạt cơ duyên! Nếu thực lực đủ vững, khắp Nhân Giới đều có thể tung hoành."`,
+      tham_lam: `"Tu tiên cũng cần tài nguyên, có linh thạch trong tay thì đan dược và pháp khí mới theo kịp cảnh giới."`,
+      tu_bi: `"Vạn vật hữu linh, khi có duyên gặp mặt nơi hồng trần tu đạo cũng đáng quý lắm thay."`,
+      bi_an: `"Nhân quả xoay vần, câu chuyện đạo hữu nhắc tới e rằng còn ẩn chứa cơ duyên phía trước."`
+    };
+    phanHoi = `${npc.ten} khẽ gật đầu: ${mauTheoTinhCach[npc.tinhCachLoai] || mauTheoTinhCach.than_trong}`;
   }
 
-  aiBusy = true;
+  thayDoiHaoCam(npc, deltaHc, true);
+  ghiKyUcNpc(npc, `${state.ten}: "${cauHoi}"`);
+  ghiNhatKy(
+    `💬 Bạn ${cungCho ? 'nói với' : 'gửi truyền âm tới'} [${npc.ten}]: "${cauHoi}"\n🗣️ ${phanHoi}${deltaHc ? ` (Hảo cảm +${deltaHc})` : ''}`,
+    deltaHc > 0 ? 'tot' : 'thuong'
+  );
+  luuGame();
   veGiaoDien();
-
-  const sys = `Bạn nhập vai NPC "${npc.ten}" (${npc.danhHieu}) trong thế giới Phàm Nhân Tu Tiên.
-Tính cách: ${npc.tinhCach}. Cảnh giới: ${layCanhGioiDef(npc.canhGioi).ten}. Hảo cảm: ${npc.haoCam} (-100..+100).
-Túi đồ: ${(npc.tuiDo || []).join(', ')}. Ký ức: ${(npc.kyUc || []).slice(-4).join(' | ') || 'Mới gặp'}.
-Trả về DUY NHẤT 1 JSON:
-{ "phanHoi": "2-4 câu đúng khẩu khí", "haoCamThayDoi": 5, "tangVatPham": null, "troMatDanhNhau": false }
-Quy tắc: haoCamThayDoi từ -25 đến +15; tangVatPham chỉ điền item ID trong túi đồ nếu hảo cảm >= 40.`;
-
-  const usr = `Tu sĩ ${state.ten} (${tenCanhGioiDayDu()}) nói: "${cauHoi}"`;
-
-  try {
-    const kq = await goiAiJson(sys, usr);
-    const delta = Math.max(-30, Math.min(20, Number(kq.haoCamThayDoi) || 0));
-    thayDoiHaoCam(npc, delta, true);
-    const loiNpc = kq.phanHoi || `${npc.ten} trầm ngâm không đáp.`;
-    ghiKyUcNpc(npc, `${state.ten}: "${cauHoi}" -> "${loiNpc}"`);
-    let phuChu = ` (Hảo cảm ${delta >= 0 ? '+' + delta : delta} => ${npc.haoCam}/100)`;
-    if (kq.tangVatPham && npc.tuiDo.includes(kq.tangVatPham) && npc.haoCam >= 35) {
-      const vp = layVatPhamDef(kq.tangVatPham);
-      if (vp) {
-        themVat(kq.tangVatPham, 1);
-        npc.tuiDo = npc.tuiDo.filter(x => x !== kq.tangVatPham);
-        phuChu += ` · 🎁 Tặng [${vp.ten}]!`;
-      }
-    }
-    ghiNhatKy(`💬 Bạn: "${cauHoi}"\n🗣️ [${npc.ten}]: "${loiNpc}"${phuChu}`, 'tot');
-    if (kq.troMatDanhNhau) danhCuopNpc(npcId);
-  } catch (err) {
-    ghiNhatKy(`⚠️ Lỗi AI (${err.message}).`, 'canh_bao');
-  } finally {
-    aiBusy = false;
-    luuGame();
-    veGiaoDien();
-  }
 }
 
 // ==========================================
@@ -6386,8 +6253,6 @@ function veCotGiua() {
     const tiLeDp = Math.round(tinhTiLeDotPhaDaiCanh() * 100);
     const vung = layVungDef();
     const dsBiCanhVung = (window.PN_DATA.biCanh || []).filter(b => b.vungId === vung.id);
-    const providerName = aiConfig.provider === 'gemini' ? 'Gemini' : 'OpenAI/OpenRouter';
-    const coKey = !!layKeyHienTai();
 
     elInteraction.innerHTML = `
       <div class="event-box">
@@ -6410,8 +6275,8 @@ function veCotGiua() {
           <button class="btn" style="grid-column: 1 / -1" onclick="chonTab('dia_diem'); chonDiaDiemSubTab('kham_pha')">
             🏞️ Khám phá 【${escapeHtml(vung.ten)}】 (Lịch luyện · Săn Yêu thú · Động phủ ẩn)
           </button>
-          <button class="btn btn-ai" style="grid-column: 1 / -1" onclick="lichLuyenAI()" ${aiBusy ? 'disabled' : ''}>
-            ${aiBusy ? '⏳ AI Đạo Diễn đang suy diễn...' : `✨ Lịch luyện AI (${providerName}${coKey ? '' : ' · Chưa gắn Key'} · 2 tháng)`}
+          <button class="btn btn-ai" style="grid-column: 1 / -1" onclick="lichLuyenOffline()">
+            🎲 Lịch luyện Giang Hồ (2 tháng · Kỳ ngộ ngẫu nhiên)
           </button>
           ${dsBiCanhVung
             .map(
@@ -7308,7 +7173,7 @@ function veCotPhai() {
                         <div class="npc-memory">${(npcChon.kyUc || []).slice(-6).map(k => `<div class="memory-line">• ${escapeHtml(k)}</div>`).join('') || '<div class="muted">Chưa có ghi chép nào.</div>'}</div>
                         <div class="chat-input-row">
                           <input id="input-chat-npc" type="text" placeholder="${cungDiaDiem ? 'Nhập lời nói...' : 'Gửi truyền âm...'}" onkeydown="if(event.key==='Enter') guiChatNpc('${npcChon.id}')" />
-                          <button class="btn btn-sm btn-ai" onclick="guiChatNpc('${npcChon.id}')" ${aiBusy ? 'disabled' : ''}>${aiBusy ? '...' : 'Gửi'}</button>
+                          <button class="btn btn-sm btn-ai" onclick="guiChatNpc('${npcChon.id}')">Gửi</button>
                         </div>
                       </div>`
                     : `<div class="ai-chat-box"><div class="sub-title">🕯️ Biên niên trước khi vẫn lạc</div><div class="npc-memory">${(npcChon.kyUc || []).slice(-6).map(k => `<div class="memory-line">• ${escapeHtml(k)}</div>`).join('') || '<div class="muted">Không có ghi chép.</div>'}</div></div>`
@@ -7493,35 +7358,8 @@ function guiChatNpc(npcId) {
 }
 
 // ==========================================
-// 11. MODAL AI, SAVE/LOAD & ROLL NHÂN VẬT
+// 11. SAVE/LOAD & ROLL NHÂN VẬT
 // ==========================================
-
-function moModalAi() {
-  document.getElementById('ai-provider').value = aiConfig.provider;
-  document.getElementById('gemini-key').value = aiConfig.geminiKey;
-  document.getElementById('gemini-model').value = aiConfig.geminiModel;
-  document.getElementById('openai-key').value = aiConfig.openaiKey;
-  document.getElementById('openai-url').value = aiConfig.openaiBaseUrl;
-  document.getElementById('openai-model').value = aiConfig.openaiModel;
-  document.getElementById('modal-ai').classList.add('open');
-}
-
-function dongModalAi() {
-  document.getElementById('modal-ai').classList.remove('open');
-}
-
-function luuTuModalAi() {
-  aiConfig.provider = document.getElementById('ai-provider').value;
-  aiConfig.geminiKey = document.getElementById('gemini-key').value.trim();
-  aiConfig.geminiModel = document.getElementById('gemini-model').value.trim() || 'gemini-2.5-flash';
-  aiConfig.openaiKey = document.getElementById('openai-key').value.trim();
-  aiConfig.openaiBaseUrl = document.getElementById('openai-url').value.trim() || 'https://openrouter.ai/api/v1';
-  aiConfig.openaiModel = document.getElementById('openai-model').value.trim() || 'openai/gpt-4o-mini';
-  luuCauHinhAI();
-  dongModalAi();
-  ghiNhatKy(`⚙️ Đã lưu cấu hình AI (${aiConfig.provider}).`, 'he_thong');
-  veGiaoDien();
-}
 
 let rolledHePreview = [];
 let rolledBuild = {
@@ -7647,7 +7485,7 @@ window.addEventListener('DOMContentLoaded', () => {
     window.NhanGioiMap.setAdapter(taoMapAdapter());
   }
   apDungTheme(localStorage.getItem(THEME_KEY) || 'dark');
-  taiCauHinhAI();
+  try { localStorage.removeItem('pn_tu_tien_ai_cfg_v1'); } catch (e) {}
   if (!taiGame()) {
     state = null;
     veGiaoDien();
