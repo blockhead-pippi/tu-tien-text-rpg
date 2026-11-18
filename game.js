@@ -474,6 +474,7 @@ function taoKiepMoi(opts = {}) {
     thuongThe: 0,
     danPhuongDaHoc: ['dp_hoang_long_dan', 'dp_kim_tuy_hoan'],
     vungHienTai: vungKhoiDau,
+    viTriMap: VUNG_TO_MAP_LOC[vungKhoiDau] || 'loc_thanh_nguu',
 
     // Động phủ cố định 1 vùng: bắt đầu 3 ô Linh Điền, nâng cấp tối đa 9 ô (Cấp 7)
     dongPhu: {
@@ -510,6 +511,7 @@ function taoKiepMoi(opts = {}) {
   state.mp = tinhMpMax();
   selectedNpcId = null;
   luuGame();
+  if (window.NhanGioiMap && window.NhanGioiMap.refreshEvents) window.NhanGioiMap.refreshEvents();
   veGiaoDien();
 }
 
@@ -3630,6 +3632,199 @@ function doiBaoKhoTongMon(cpId) {
 // 7. DI CHUYỂN BẢN ĐỒ, BÍ CẢNH & SĂN YÊU THÚ
 // ==========================================
 
+// Ánh xạ vùng game <-> vị trí trên Bản Đồ Nhân Giới SVG (Tác giả: Gemini (Antigravity))
+const VUNG_TO_MAP_LOC = {
+  kinh_chau: 'loc_thanh_nguu',
+  lam_chau: 'loc_kinh_chau',
+  gia_nguyen_thanh: 'loc_kinh_chau',
+  khuong_quoc: 'loc_viet_quoc',
+  viet_quoc: 'loc_viet_quoc',
+  nguyen_vo_quoc: 'loc_thien_khuyet',
+  thai_nhac_son_mach: 'loc_hoang_phong',
+  yen_gia_bao: 'loc_huyet_sac',
+  khoi_tinh_dao: 'loc_thanh_linh',
+  loan_tinh_hai: 'loc_hu_thien',
+  tieu_chinh_toan_dao: 'loc_hai_nguyen',
+  ngoai_tinh_hai: 'loc_vu_an',
+  khe_quoc: 'loc_hoang_phong',
+  mo_lan_thao_nguyen: 'loc_mo_lan_thao',
+  thien_nam_minh_ngoai: 'loc_mo_lan_cua',
+  van_mong_son: 'loc_thien_khuyet',
+  lieu_chau: 'loc_khon_ngo',
+  thien_tinh_thanh: 'loc_thien_tinh',
+  tan_kinh: 'loc_tan_kinh',
+  dai_tan: 'loc_phuong_thi',
+  bang_dao: 'loc_truyen_tong'
+};
+
+function layMapLocTuState() {
+  if (!state) return 'loc_thanh_nguu';
+  const locs = window.NK_MAP_DATA?.locations || [];
+  if (state.viTriMap && locs.some(l => l.id === state.viTriMap)) return state.viTriMap;
+  return VUNG_TO_MAP_LOC[state.vungHienTai] || 'loc_thanh_nguu';
+}
+
+function dongBoBanDo() {
+  if (window.NhanGioiMap && window.NhanGioiMap.sync) {
+    try { window.NhanGioiMap.sync(); } catch (e) {}
+  }
+}
+
+function moBanDoTuongTac(opts = null) {
+  if (!state) return;
+  if (window.NhanGioiMap && window.NhanGioiMap.open) {
+    window.NhanGioiMap.open(opts || { locId: layMapLocTuState() });
+  }
+}
+
+function quyDoiVatPhamBanDo(rawItemName) {
+  const mappedId = window.NK_MAP_DATA?.itemMap?.[rawItemName] || rawItemName;
+  const vp = layVatPhamDef(mappedId);
+  const cg = state ? state.canhGioi || 0 : 0;
+  if (vp && (vp.canhGioi || 0) <= cg + 1) return mappedId;
+  if (cg === 0) return 'thao_nhan_sam';
+  if (cg === 1) return 'dan_tinh_linh';
+  if (cg === 2) return 'thao_linh_chi_tram_nam';
+  return 'yeu_dan_tam_cap';
+}
+
+function taoMapAdapter() {
+  return {
+    canPlay: () => Boolean(state),
+    read: () => {
+      if (!state) return { ready: false, theme: document.documentElement.getAttribute('data-theme') || 'dark' };
+      const tuViCan = tinhTuViCan();
+      return {
+        ready: true,
+        canhGioi: Math.min(5, state.canhGioi || 0),
+        realCanhGioi: state.canhGioi || 0,
+        canhGioiTen: tenCanhGioiDayDu(),
+        tuVi: state.tuVi || 0,
+        tuViCan,
+        linhThach: state.linhThach || 0,
+        nam: state.nam || 1,
+        thang: state.thang || 1,
+        tuoi: state.tuoi || 16,
+        thoNguyen: tinhThoNguyenMax(),
+        months: ((state.nam || 1) - 1) * 12 + ((state.thang || 1) - 1),
+        loc: layMapLocTuState(),
+        dead: Boolean(state.ketThuc && !state.ketThuc.thangLoi),
+        won: Boolean(state.ketThuc && state.ketThuc.thangLoi),
+        busy: Boolean(state.ketThuc || state.tranHienTai || state.hauChienNpc || state.suKienHienTai || state.biCanhHienTai),
+        beQuan12Preview: tinhTocDoTuLuyenNam(),
+        theme: document.documentElement.getAttribute('data-theme') || 'dark'
+      };
+    },
+    write: () => {},
+    onAdvanceMonths: months => {
+      if (!state || state.ketThuc || !months || months <= 0) return;
+      tienThoiGian(months);
+      luuGame();
+      veGiaoDien();
+    },
+    onArriveLocation: (loc, months) => {
+      if (!state || !loc) return;
+      state.viTriMap = loc.id;
+      if (loc.vungId && (window.PN_DATA?.vungDat || []).some(v => v.id === loc.vungId)) {
+        state.vungHienTai = loc.vungId;
+        damBaoDiaDiemVung(loc.vungId);
+      }
+      const vung = layVungDef();
+      if (months > 0) {
+        ghiNhatKy(`🦅 Độn quang trên Bản Đồ (${months} tháng) tới 【${loc.ten}】 (thuộc ${vung.ten} · LK x${vung.linhKhi}).`, 'tot');
+      }
+      luuGame();
+      veGiaoDien();
+    },
+    onApplyReward: (e, contextLoc) => {
+      if (!state || !e) return e;
+      const out = { lt: 0, tv: 0, hp: 0, tho: 0, mo: e.mo || 0, itemTen: '' };
+      const tuViCan = tinhTuViCan();
+      const cg = state.canhGioi || 0;
+      if (e._beQuan12) {
+        const lkRatio = contextLoc?.lx ? Math.max(0.85, Math.min(1.5, contextLoc.lx / Math.max(0.5, layVungDef().linhKhi))) : 1;
+        out.tv = Math.max(8, Math.round(tinhTocDoTuLuyenNam() * lkRatio * (0.94 + Math.random() * 0.12)));
+        state.tuVi += out.tv;
+      } else if (e.tv) {
+        const scaledTv = Math.round(e.tv * Math.max(1, tuViCan / (95 * Math.max(1, contextLoc?.danger || 1))));
+        out.tv = Math.max(8, Math.min(Math.round(tuViCan * 0.45), scaledTv));
+        state.tuVi += out.tv;
+      }
+      if (e.lt) {
+        if (e.lt < 0) {
+          const spent = Math.min(state.linhThach, Math.abs(Math.round(e.lt)));
+          state.linhThach = Math.max(0, state.linhThach - spent);
+          out.lt = -spent;
+        } else {
+          out.lt = Math.max(1, Math.round(e.lt * Math.pow(1.6, Math.min(5, cg))));
+          state.linhThach += out.lt;
+        }
+      }
+      if (e.hp) {
+        const hpMax = tinhHpMax();
+        const mpMax = tinhMpMax();
+        const oldHp = state.hp;
+        state.hp = Math.min(hpMax, state.hp + Math.round(hpMax * 0.35));
+        state.mp = Math.min(mpMax, (state.mp ?? mpMax) + Math.round(mpMax * 0.35));
+        out.hp = Math.max(1, state.hp - oldHp);
+      }
+      if (e.tho) {
+        const tonTho = Math.min(3, Math.max(1, Math.ceil(e.tho / 5)));
+        state.thoNguyenBonus = (state.thoNguyenBonus || 0) - tonTho;
+        state.hp = Math.max(1, state.hp - Math.round(tinhHpMax() * 0.15));
+        out.tho = tonTho;
+      }
+      if (e.item) {
+        const itemId = quyDoiVatPhamBanDo(e.item);
+        const vp = layVatPhamDef(itemId);
+        if (themVat(itemId, 1)) {
+          out.itemTen = vp ? vp.ten : e.item;
+        }
+      }
+      if (e.mo && e.mo > 0) {
+        tienThoiGian(e.mo);
+      }
+      const parts = [];
+      if (out.tv > 0) parts.push(`+${out.tv.toLocaleString()} Tu vi`);
+      if (out.lt > 0) parts.push(`+${out.lt.toLocaleString()} LT`);
+      if (out.lt < 0 && !e._travelFee) parts.push(`${out.lt.toLocaleString()} LT`);
+      if (out.hp > 0) parts.push(`+${out.hp} Khí huyết`);
+      if (out.itemTen) parts.push(`nhận [${out.itemTen}]`);
+      if (out.tho > 0) parts.push(`tổn ${out.tho} năm thọ`);
+      if (parts.length > 0 && (out.tv > 0 || out.lt > 0 || out.hp > 0 || out.itemTen || out.tho > 0)) {
+        const tenNoi = contextLoc?.ten || layVungDef().ten;
+        ghiNhatKy(
+          `${e._beQuan12 ? '🧘 Bế quan 1 năm tại' : '✦ Cơ duyên tại'} 【${tenNoi}】: ${parts.join(', ')}.`,
+          out.tho > 0 ? 'canh_bao' : 'tot'
+        );
+      }
+      luuGame();
+      veGiaoDien();
+      return out;
+    },
+    onTriggerCombat: ev => {
+      if (!state || state.ketThuc || state.tranHienTai || state.suKienHienTai) return;
+      if (ev?.baseLocId) state.viTriMap = ev.baseLocId;
+      if (ev?.vungId && (window.PN_DATA?.vungDat || []).some(v => v.id === ev.vungId)) {
+        state.vungHienTai = ev.vungId;
+        damBaoDiaDiemVung(ev.vungId);
+      }
+      sanYeuThuVung();
+    },
+    onOpenLocalPanel: loc => {
+      if (!state) return;
+      if (loc?.id) state.viTriMap = loc.id;
+      if (loc?.vungId && (window.PN_DATA?.vungDat || []).some(v => v.id === loc.vungId)) {
+        state.vungHienTai = loc.vungId;
+        damBaoDiaDiemVung(loc.vungId);
+      }
+      activeTab = 'dia_diem';
+      luuGame();
+      veGiaoDien();
+    }
+  };
+}
+
 function tinhThangDiChuyen(vungId) {
   const list = window.PN_DATA.vungDat || [];
   const curIdx = list.findIndex(v => v.id === state.vungHienTai);
@@ -3655,6 +3850,7 @@ function diChuyenVung(vungId) {
   if (state.vungHienTai === vungId) return;
   const thang = tinhThangDiChuyen(vungId);
   state.vungHienTai = vungId;
+  if (VUNG_TO_MAP_LOC[vungId]) state.viTriMap = VUNG_TO_MAP_LOC[vungId];
   damBaoDiaDiemVung(vungId);
   tienThoiGian(thang);
   ghiNhatKy(`🦅 Lên đường suốt ${thang} tháng tới vùng đất mới: 【${vung.ten}】 (Linh khí x${vung.linhKhi}).`, 'tot');
@@ -5897,6 +6093,7 @@ function apDungTheme(theme) {
   localStorage.setItem(THEME_KEY, theme);
   const btn = document.getElementById('btn-theme');
   if (btn) btn.textContent = theme === 'dark' ? '☀️ Đổi sang Light Theme' : '🌙 Đổi sang Dark Theme';
+  if (window.NhanGioiMap && window.NhanGioiMap.setTheme) window.NhanGioiMap.setTheme(theme);
 }
 
 function doiTheme() {
@@ -5931,6 +6128,8 @@ function thamNhaNpc(npcId) {
 
 // Màn hình trống trước khi người chơi roll & xác nhận nhân vật Kiếp 1 (Tác giả: Gemini (Antigravity))
 function veManHinhKhoiTaoBlank() {
+  if (document.body) document.body.classList.add('no-char');
+  dongBoBanDo();
   const colStatus = document.getElementById('col-status');
   const mainInter = document.getElementById('main-interaction');
   const mainLog = document.getElementById('main-log');
@@ -5966,7 +6165,9 @@ function veGiaoDien() {
     veManHinhKhoiTaoBlank();
     return;
   }
+  if (document.body) document.body.classList.remove('no-char');
   kepKhiHuyetVaLinhLuc();
+  dongBoBanDo();
 
   const lcDef = layLinhCanDef();
   const tcDef = layTheChatDef();
@@ -7118,26 +7319,63 @@ function veCotPhai() {
     }
   }
 
-  // TAB 5: BẢN ĐỒ (40 VÙNG ĐẤT TỪ NHÂN GIỚI ĐẾN LINH GIỚI / MA GIỚI)
+  // TAB 5: BẢN ĐỒ (BẢN ĐỒ NHÂN GIỚI TƯƠNG TÁC + 40 VÙNG ĐẤT)
   else if (activeTab === 'ban_do') {
     const q = uiFilter.mapQuery.trim().toLowerCase();
     const dsVung = window.PN_DATA.vungDat.filter(v => !q || v.ten.toLowerCase().includes(q) || (v.moTa || '').toLowerCase().includes(q));
+    const mapLocId = layMapLocTuState();
+    const mapLocObj = (window.NK_MAP_DATA?.locations || []).find(l => l.id === mapLocId);
+    const evNodes = window.NhanGioiMap && window.NhanGioiMap.getEventNodes ? window.NhanGioiMap.getEventNodes() : [];
+
     el.innerHTML = `
       <div class="sub-section">
-        <div class="sub-title">🗺️ Bản Đồ Tu Tiên Giới (${dsVung.length} vùng)</div>
+        <div class="sub-title">🗺️ Bản Đồ Nhân Giới Tương Tác (Kiểu Vạn Kiếp)</div>
+        <div class="stat-row">
+          <span>Vị trí trên bản đồ: <b class="hl-realm">${escapeHtml(mapLocObj ? mapLocObj.ten : layVungDef().ten)}</b></span>
+          <span>Điểm sự kiện đang mở: <b class="hl-gold">${evNodes.length} cơ duyên</b></span>
+        </div>
+        <div class="row-actions" style="margin:8px 0">
+          <button class="btn btn-primary" onclick="moBanDoTuongTac()">🗺️ Mở Bản Đồ Nhân Giới (Click Di Chuyển & Kỳ Ngộ)</button>
+          <button class="btn btn-sm" onclick="if(window.NhanGioiMap?.refreshEvents){window.NhanGioiMap.refreshEvents(); veCotPhai();}">🔄 Làm mới cơ duyên</button>
+        </div>
+        <div class="muted" style="margin-bottom:8px">Mở bản đồ (hoặc bấm phím <b>M</b>) để click chọn địa danh / nút sự kiện động, độn quang bay thẳng và kích hoạt kỳ ngộ tại chỗ.</div>
+        ${
+          evNodes.length > 0
+            ? evNodes
+                .map(ev => {
+                  const baseLoc = (window.NK_MAP_DATA?.locations || []).find(l => l.id === ev.baseLocId);
+                  return `<div class="card-row">
+                    <div>
+                      <b>${ev.icon || '✦'} ${escapeHtml(ev.ten)}</b> <span class="badge">${escapeHtml(ev.badge || 'Cơ duyên')}</span>
+                      <div class="muted">Gần: <b>${escapeHtml(baseLoc ? baseLoc.ten : ev.vungId)}</b> · Nguy hiểm ${'★'.repeat(Math.max(1, ev.danger || 1))} · Linh khí x${ev.lx || 1}</div>
+                    </div>
+                    <button class="btn btn-sm btn-primary" onclick="moBanDoTuongTac({ evId: '${ev.id}' })">🚀 Bay tới</button>
+                  </div>`;
+                })
+                .join('')
+            : '<div class="muted">Hiện chưa có sự kiện động nào quanh vùng.</div>'
+        }
+      </div>
+
+      <div class="sub-section">
+        <div class="sub-title">🧭 Danh Sách Toàn Tu Tiên Giới (${dsVung.length} vùng)</div>
         <div class="filter-bar">
           <input id="filter-map" type="text" placeholder="Tìm vùng đất (Việt Quốc, Loạn Tinh Hải, Linh Giới...)" value="${escapeHtml(uiFilter.mapQuery)}" oninput="uiFilter.mapQuery=this.value; veCotPhai()" />
         </div>
         ${dsVung
           .map(v => {
             const dangO = state.vungHienTai === v.id;
+            const locMapVung = VUNG_TO_MAP_LOC[v.id];
             return `<div class="card-row">
               <div>
                 <b>${v.ten}</b> ${dangO ? '<span class="hl-green">[Đang ở đây]</span>' : ''}
                 <div class="muted">Yêu cầu: ${layCanhGioiDef(v.canhGioiYeuCau).ten} · Linh khí: x${v.linhKhi}</div>
                 <div class="muted">${v.moTa}</div>
               </div>
-              ${dangO ? '' : `<button class="btn btn-sm btn-primary" onclick="diChuyenVung('${v.id}')">Đi tới (${tinhThangDiChuyen(v.id)} tháng)</button>`}
+              <div class="row-actions">
+                ${locMapVung ? `<button class="btn btn-sm" onclick="moBanDoTuongTac({ locId: '${locMapVung}' })">🗺️ Xem Map</button>` : ''}
+                ${dangO ? '' : `<button class="btn btn-sm btn-primary" onclick="diChuyenVung('${v.id}')">Đi tới (${tinhThangDiChuyen(v.id)} tháng)</button>`}
+              </div>
             </div>`;
           })
           .join('')}
@@ -7405,6 +7643,9 @@ function escapeHtml(str) {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  if (window.NhanGioiMap && window.NhanGioiMap.setAdapter) {
+    window.NhanGioiMap.setAdapter(taoMapAdapter());
+  }
   apDungTheme(localStorage.getItem(THEME_KEY) || 'dark');
   taiCauHinhAI();
   if (!taiGame()) {
