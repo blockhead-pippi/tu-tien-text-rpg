@@ -5,5 +5,5 @@ Game text .html đơn giản, chạy offline hoàn toàn không cần internet.
 
 Download toàn bộ file, sau đó mở file index html bằng bất kỳ trình duyệt web nào để chơi game.
 
-Hoặc chơi tại: 
+Test trực tiếp tại đây: 
 https://blockhead-pippi.github.io/tu-tien-text-rpg/
