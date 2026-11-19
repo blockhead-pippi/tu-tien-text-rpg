@@ -533,6 +533,8 @@ function taoKiepMoi(opts = {}) {
     deTu: [],
     bienNienNguyenTac: { daXayRa: {}, luaChon: {}, hanLapMoc: 0 },
     namHuyetSacCuoi: 0,
+    shopVung: {},
+    shopRollNam: { nam: 1, soLan: 0 },
     nhatKy: [
       {
         nam: 1,
@@ -602,6 +604,10 @@ function taiGame() {
         state.bienNienNguyenTac = { daXayRa: {}, luaChon: {}, hanLapMoc: 0 };
       }
       if (typeof state.namHuyetSacCuoi !== 'number') state.namHuyetSacCuoi = 0;
+      if (!state.shopVung || typeof state.shopVung !== 'object') state.shopVung = {};
+      if (!state.shopRollNam || typeof state.shopRollNam !== 'object') {
+        state.shopRollNam = { nam: state.nam || 1, soLan: 0 };
+      }
       if (state.npcs && Array.isArray(window.PN_DATA?.npcs)) {
         for (const baseNpc of window.PN_DATA.npcs) {
           if (baseNpc && baseNpc.id && !state.npcs[baseNpc.id]) {
@@ -6775,7 +6781,9 @@ function veCotGiua() {
   lastInteractionKey = interactionKey;
 }
 
-// Kho hàng ngẫu nhiên theo vùng & năm (đảm bảo bày bán đa dạng Pháp bảo, Đan dược, Phù lục, Túi trữ vật, Thảo dược, Vật liệu, Công pháp)
+// Kho hàng ngẫu nhiên riêng cho từng địa điểm (lưu theo vùng & năm) · Giới hạn 3 lần đổi phiên/năm (10 → 100 → 1.000 LT) (Tác giả: Gemini (Antigravity))
+const SHOP_ROLL_COSTS = [10, 100, 1000];
+const MAX_ROLL_SHOP_NAM = SHOP_ROLL_COSTS.length;
 let shopNonce = 0;
 let shopHangCache = { key: '', items: [], congPhap: [], danPhuong: [] };
 
@@ -6788,35 +6796,145 @@ function chonNgauNhienNhieu(arr, n) {
   return copy.slice(0, n);
 }
 
-function layKhoHangShop(vung, maxCg) {
-  const key = `${vung.id}_${state.nam}_${maxCg}_${shopNonce}`;
-  if (shopHangCache.key === key) return shopHangCache;
+// Bốc ngẫu nhiên có trọng số không lặp (Roulette wheel thật sự random, không khóa cứng top)
+function chonNgauNhienCoTrongSo(arr, n, weightFn) {
+  const pool = [...arr];
+  const out = [];
+  const target = Math.max(0, Number(n) || 0);
+  while (pool.length > 0 && out.length < target) {
+    let tong = 0;
+    const weights = pool.map(item => {
+      const w = Math.max(0.05, Number(weightFn ? weightFn(item) : 1) || 1);
+      tong += w;
+      return w;
+    });
+    let r = Math.random() * tong;
+    let pickedIdx = pool.length - 1;
+    for (let i = 0; i < weights.length; i++) {
+      r -= weights[i];
+      if (r <= 0) {
+        pickedIdx = i;
+        break;
+      }
+    }
+    out.push(pool.splice(pickedIdx, 1)[0]);
+  }
+  return out;
+}
 
-  const hopCg = cg => cg <= maxCg;
-  // v1.6.1: vật phẩm (đan dược/trang bị/phù lục/túi/yêu đan) chỉ bán bằng cảnh giới hiện tại
-  const cgToiDa = Math.min(maxCg, Number(state.canhGioi) || 0);
-  const cgHienTai = Number(state.canhGioi) || 0;
+function layThongTinRollShop() {
+  const nam = (state && state.nam) || 1;
+  if (state && (!state.shopRollNam || state.shopRollNam.nam !== nam)) {
+    state.shopRollNam = { nam, soLan: 0 };
+  }
+  const daDung = Math.max(0, Math.min(MAX_ROLL_SHOP_NAM, Number(state?.shopRollNam?.soLan) || 0));
+  const conLai = Math.max(0, MAX_ROLL_SHOP_NAM - daDung);
+  const giaTiepTheo = daDung < MAX_ROLL_SHOP_NAM ? SHOP_ROLL_COSTS[daDung] : null;
+  return { nam, daDung, conLai, giaTiepTheo, toiDa: MAX_ROLL_SHOP_NAM };
+}
+
+function layDacSanVungShop(vung) {
+  const id = String(vung?.id || '');
+  if (/hai|dao|tinh/.test(id)) return { he: ['THUY', 'BANG', 'LOI'], loai: 'yeu_dan' };
+  if (/son|nhac|vo|kiem/.test(id)) return { he: ['KIM', 'THO', 'PHONG'], loai: 'phap_bao' };
+  if (/tan|kinh|viet|duoc|khe/.test(id)) return { he: ['MOC', 'HOA'], loai: 'dan' };
+  if (/ma|huyen|uyen|khuong/.test(id)) return { he: ['AM', 'HOA', 'DOC'], loai: 'phu_luc' };
+  // Tạo bản sắc hệ linh khí nhẹ dựa theo tên vùng để mỗi địa điểm có sắc thái riêng
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  const hePool = ['KIM', 'MOC', 'THUY', 'HOA', 'THO'];
+  return { he: [hePool[hash % hePool.length], hePool[(hash + 2) % hePool.length]], loai: '' };
+}
+
+function layTapIdDangBanVungKhac(vungIdTru, namHienTai) {
+  const used = new Set();
+  const map = (state && state.shopVung) || {};
+  for (const [vid, rec] of Object.entries(map)) {
+    if (vid === vungIdTru || !rec || rec.nam !== namHienTai) continue;
+    for (const s of rec.itemSpecs || []) used.add(s.id);
+    for (const cid of rec.congPhapIds || []) used.add(cid);
+    for (const did of rec.danPhuongIds || []) used.add(did);
+  }
+  return used;
+}
+
+function layKhoHangShop(vung, maxCg, forceReroll = false, excludePrevIds = null) {
+  const nam = (state && state.nam) || 1;
+  const cgHienTai = Number(state?.canhGioi) || 0;
+  if (!state.shopVung || typeof state.shopVung !== 'object') state.shopVung = {};
+
+  const saved = state.shopVung[vung.id];
+  const savedHopLe =
+    !forceReroll &&
+    saved &&
+    saved.nam === nam &&
+    saved.cg === cgHienTai &&
+    saved.maxCg === maxCg &&
+    Array.isArray(saved.itemSpecs) &&
+    saved.itemSpecs.length > 0;
+
+  if (savedHopLe) {
+    if (shopHangCache.key === saved.key) return shopHangCache;
+    const hydratedItems = [];
+    for (const sp of saved.itemSpecs) {
+      const vp = layVatPhamDef(sp.id);
+      if (!vp) continue;
+      const pc = layPhamChatVatPham(sp.pcKey);
+      hydratedItems.push({
+        ...vp,
+        shopKey: sp.shopKey,
+        pcKey: pc.key,
+        giaShop: Math.max(1, Math.round((vp.gia || 0) * pc.heSo))
+      });
+    }
+    const hydratedCp = (saved.congPhapIds || [])
+      .map(cid => layCongPhapDef(cid))
+      .filter(c => c && !state.congPhapDaHoc.includes(c.id));
+    const hydratedDp = (saved.danPhuongIds || [])
+      .map(did => (window.PN_DATA.danPhuong || []).find(d => d.id === did))
+      .filter(d => d && !state.danPhuongDaHoc.includes(d.id));
+
+    shopHangCache = {
+      key: saved.key,
+      items: hydratedItems,
+      congPhap: hydratedCp,
+      danPhuong: hydratedDp
+    };
+    return shopHangCache;
+  }
+
+  const cgToiDa = Math.min(maxCg, cgHienTai);
   const hopCgVatPham = cg => cg <= cgToiDa;
-  // Đan dược & pháp bảo: chỉ bán đúng cảnh giới hiện tại
-  const hopCgDanVaPhapBao = cg => Number(cg) === cgHienTai;
-  // Công pháp/đan phương vẫn có thể vượt 1 cấp như trước
   const hopCgTriThuc = cg => cg <= maxCg;
-  // UPDATE v1.1: chọn hàng có trọng số — ưu tiên món dùng được ngay & vừa túi tiền
-  const uuTien = (arr, n, diemFn) =>
-    [...arr]
-      .map(x => ({ x, s: (diemFn ? diemFn(x) : 0) + Math.random() * 0.9 }))
-      .sort((a, b) => b.s - a.s)
-      .slice(0, n)
-      .map(o => o.x);
   const nganSach = Math.max(200, Number(state.linhThach) || 0);
-  // v1.1.1: cấp hàng "phù hợp" = cảnh giới người chơi (không lệch lên cảnh giới kế tiếp)
-  const cgMuc = Math.min(state.canhGioi, maxCg);
+  const cgMuc = Math.min(cgHienTai, maxCg);
+  const dacSan = layDacSanVungShop(vung);
+  const dangBanNoiKhac = layTapIdDangBanVungKhac(vung.id, nam);
+
+  const heSoDaDang = (id, heArr, loai) => {
+    let w = 1.0;
+    if (excludePrevIds && excludePrevIds.has(id)) w *= 0.08;
+    if (dangBanNoiKhac.has(id)) w *= 0.22;
+    if (dacSan.loai && loai === dacSan.loai) w *= 1.45;
+    if (Array.isArray(heArr) && heArr.some(h => dacSan.he.includes(h))) w *= 1.35;
+    return w;
+  };
 
   const allVp = window.PN_DATA.vatPham || [];
-  const pbList = allVp.filter(v => v.loai === 'phap_bao' && hopCgDanVaPhapBao(v.canhGioi ?? 0));
+  // Pháp bảo: ưu tiên đúng cảnh giới, kèm tỷ lệ nhỏ món sát dưới để mỗi địa điểm có bộ khác nhau rõ rệt
+  const pbList = allVp.filter(v => {
+    if (v.loai !== 'phap_bao') return false;
+    const cgV = Number(v.canhGioi ?? 0);
+    if (cgHienTai === 0) return cgV <= 1;
+    return cgV <= cgHienTai && cgV >= Math.max(0, cgHienTai - 1);
+  });
+  // Đan dược: đúng cảnh giới + đan hồi HP/MP sát dưới giúp bể chọn phong phú theo vùng
   const danList = allVp.filter(v => {
-    if (v.loai !== 'dan' || !hopCgDanVaPhapBao(v.canhGioi ?? 0)) return false;
-    return true;
+    if (v.loai !== 'dan') return false;
+    const cgV = Number(v.canhGioi ?? 0);
+    if (cgV === cgHienTai) return true;
+    const laDanHoi = (Number(v.hieuUng?.hp) || 0) > 0 || (Number(v.hieuUng?.mp) || 0) > 0;
+    return cgHienTai >= 1 && cgV === cgHienTai - 1 && laDanHoi;
   });
   const phuList = allVp.filter(v => v.loai === 'phu_luc' && hopCgVatPham(v.canhGioi ?? 0));
   const truList = allVp.filter(v => v.loai === 'tru_vat' && hopCgVatPham(v.canhGioi ?? 0));
@@ -6829,51 +6947,57 @@ function layKhoHangShop(vung, maxCg) {
   });
   const vlList = allVp.filter(v => ['yeu_dan', 'linh_vat'].includes(v.loai) && hopCgVatPham(layCanhGioiVatPham(v)));
 
-  const pbChon = uuTien(pbList, vung.coPhuongThi ? 6 : 3, v => {
-    const lech = Math.abs(Number(v.canhGioi ?? 0) - cgMuc);
-    return 2.4 - lech * 1.1 + ((v.gia || 0) <= nganSach * 1.5 ? 1.1 : -0.7);
+  const soPb = vung.coPhuongThi ? 3 + Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 2);
+  const pbChon = chonNgauNhienCoTrongSo(pbList, soPb, v => {
+    const cgV = Number(v.canhGioi ?? 0);
+    const dungCap = cgV === cgMuc ? 4.2 : 1.0;
+    const giaHop = (v.gia || 0) <= nganSach * 2 ? 1.5 : 0.7;
+    return dungCap * giaHop * heSoDaDang(v.id, v.he, v.loai);
   });
-  // Bảo đảm luôn có ít nhất 1 vũ khí rẻ để người chơi mới trang bị được
   if (pbChon.length > 0 && !pbChon.some(v => (v.gia || 0) <= nganSach * 1.5)) {
-    const reNhat = [...pbList].sort((a, b) => (a.gia || 0) - (b.gia || 0))[0];
-    if (reNhat) pbChon[pbChon.length - 1] = reNhat;
+    const reCandidates = pbList.filter(v => (v.gia || 0) <= nganSach * 1.5);
+    const rePick = reCandidates.length > 0 ? pickRandom(reCandidates) : [...pbList].sort((a, b) => (a.gia || 0) - (b.gia || 0))[0];
+    if (rePick && !pbChon.some(v => v.id === rePick.id)) pbChon[pbChon.length - 1] = rePick;
   }
 
-  const danChon = uuTien(danList, vung.coPhuongThi ? 6 : 4, v => {
-    const lech = Math.abs(Number(v.canhGioi ?? 0) - cgMuc);
-    const coTuVi = Number(v.hieuUng?.tuVi) > 0 ? 0.8 : 0;
-    const laDanDotPha = Number(v.hieuUng?.bonusDotPha) > 0 ? (laDinhPhongDaiCanh() ? 2.2 : 0.5) : 0;
-    const vuaTien = (v.gia || 0) <= nganSach ? 0.7 : -0.5;
-    return 2.0 - lech * 0.9 + coTuVi + laDanDotPha + vuaTien;
+  const soDan = vung.coPhuongThi ? 3 + Math.floor(Math.random() * 2) : 2 + Math.floor(Math.random() * 2);
+  const danChon = chonNgauNhienCoTrongSo(danList, soDan, v => {
+    const cgV = Number(v.canhGioi ?? 0);
+    const dungCap = cgV === cgMuc ? 4.0 : 1.1;
+    const coTuVi = Number(v.hieuUng?.tuVi) > 0 ? 1.35 : 1.0;
+    const laDanDp = Number(v.hieuUng?.bonusDotPha) > 0 ? (laDinhPhongDaiCanh() ? 2.6 : 1.15) : 1.0;
+    const vuaTien = (v.gia || 0) <= nganSach * 1.5 ? 1.3 : 0.75;
+    return dungCap * coTuVi * laDanDp * vuaTien * heSoDaDang(v.id, null, v.loai);
   });
-  // Ở đỉnh đại cảnh giới mà chưa thấy đan đột phá phù hợp thì chèn thêm 1 đan hỗ trợ
-  if (laDinhPhongDaiCanh()) {
-    const danDp = danList
-      .filter(v => Number(v.hieuUng?.bonusDotPha) > 0)
-      .sort((a, b) => (a.gia || 0) - (b.gia || 0))[0];
+  if (laDinhPhongDaiCanh() && !danChon.some(v => Number(v.hieuUng?.bonusDotPha) > 0)) {
+    const dpPool = danList.filter(v => Number(v.hieuUng?.bonusDotPha) > 0 && Number(v.canhGioi ?? 0) === cgHienTai);
+    const danDp = dpPool.length > 0 ? pickRandom(dpPool) : null;
     if (danDp && !danChon.some(v => v.id === danDp.id)) danChon.push(danDp);
   }
 
-  const pickedItems = [
-    ...pbChon,
-    ...danChon,
-    ...chonNgauNhienNhieu(phuList, 3),
-    ...chonNgauNhienNhieu(truList, 2),
-    ...chonNgauNhienNhieu(thaoList, vung.coPhuongThi ? 6 : 4),
-    ...chonNgauNhienNhieu(vlList, 3)
-  ].map(v => {
+  const soPhu = vung.coPhuongThi ? 2 + Math.floor(Math.random() * 2) : 1;
+  const phuChon = chonNgauNhienCoTrongSo(phuList, soPhu, v => heSoDaDang(v.id, v.he, v.loai));
+  const soTru = vung.coPhuongThi ? 1 : Math.random() < 0.45 ? 1 : 0;
+  const truChon = chonNgauNhienCoTrongSo(truList, soTru, v => heSoDaDang(v.id, null, v.loai));
+  const soThao = vung.coPhuongThi ? 4 + Math.floor(Math.random() * 3) : 2 + Math.floor(Math.random() * 2);
+  const thaoChon = chonNgauNhienCoTrongSo(thaoList, soThao, v => heSoDaDang(v.id, null, v.loai));
+  const soVl = vung.coPhuongThi ? 2 + Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 2);
+  const vlChon = chonNgauNhienCoTrongSo(vlList, soVl, v => heSoDaDang(v.id, null, v.loai));
+
+  const pickedItems = [...pbChon, ...danChon, ...phuChon, ...truChon, ...thaoChon, ...vlChon].map(v => {
     const shopKey = taoItemKey(v.id);
     const pc = layPhamChatVatPham(shopKey);
     return { ...v, shopKey, pcKey: pc.key, giaShop: Math.max(1, Math.round((v.gia || 0) * pc.heSo)) };
   });
 
   // v1.2: đan hỗ trợ đột phá luôn tối thiểu Trung phẩm (tránh chuỗi xui Hạ phẩm liên tiếp)
-  const dpItem = pickedItems.find(v => Number(v.hieuUng?.bonusDotPha) > 0);
-  if (dpItem && dpItem.pcKey === 'ha') {
-    const pcTrung = layPhamChatVatPham('trung');
-    dpItem.shopKey = taoItemKey(dpItem.id, 'trung');
-    dpItem.pcKey = 'trung';
-    dpItem.giaShop = Math.max(1, Math.round((dpItem.gia || 0) * pcTrung.heSo));
+  for (const dpItem of pickedItems) {
+    if (Number(dpItem.hieuUng?.bonusDotPha) > 0 && dpItem.pcKey === 'ha') {
+      const pcTrung = layPhamChatVatPham('trung');
+      dpItem.shopKey = taoItemKey(dpItem.id, 'trung');
+      dpItem.pcKey = 'trung';
+      dpItem.giaShop = Math.max(1, Math.round((dpItem.gia || 0) * pcTrung.heSo));
+    }
   }
 
   const cpList = (window.PN_DATA.congPhap || []).filter(
@@ -6883,46 +7007,92 @@ function layKhoHangShop(vung, maxCg) {
     d => hopCgTriThuc(d.canhGioi ?? 1) && !state.danPhuongDaHoc.includes(d.id)
   );
 
-  // Ưu tiên công pháp/bí thuật đúng cảnh giới, đủ tiền, và lấp slot bí thuật còn trống
-  const soBíThuatDangCo = (state.biThuat || []).length;
-  const cpChon = uuTien(cpList, vung.coPhuongThi ? 5 : 3, c => {
+  const soBiThuatDangCo = (state.biThuat || []).length;
+  const soCp = vung.coPhuongThi ? 3 + Math.floor(Math.random() * 3) : 2 + Math.floor(Math.random() * 2);
+  const cpChon = chonNgauNhienCoTrongSo(cpList, soCp, c => {
     const cgC = Number(c.canhGioi) || 0;
-    const dungCap = cgC === cgMuc ? 2.2 : cgC === maxCg ? 0.4 : 0;
-    const laBiThuat = c.loai === 'BI_THUAT' && soBíThuatDangCo < 3 ? 0.9 : 0;
-    const vuaTien = (c.gia || 0) <= Math.max(150, state.linhThach) ? 0.6 : -0.6;
-    const tocDo = (c.tuLuyen?.heSoTocDo || 1) * 0.8;
-    return dungCap + laBiThuat + vuaTien + tocDo;
+    const dungCap = cgC === cgMuc ? 3.5 : cgC === maxCg ? 1.4 : 0.7;
+    const laBiThuat = c.loai === 'BI_THUAT' && soBiThuatDangCo < 3 ? 1.5 : 1.0;
+    const vuaTien = (c.gia || 0) <= Math.max(150, state.linhThach) ? 1.35 : 0.75;
+    return dungCap * laBiThuat * vuaTien * heSoDaDang(c.id, c.he, 'cong_phap');
   });
 
-  // v1.1.1: bảo đảm luôn có 1 công pháp TU_LUYEN đúng cảnh giới để thay thế công pháp lỗi thời
+  // v1.1.1: bảo đảm có ít nhất 1 công pháp TU_LUYEN đúng cảnh giới (bốc ngẫu nhiên thay vì cố định 1 quyển)
   if (!cpChon.some(c => c.loai === 'TU_LUYEN' && Number(c.canhGioi) === cgMuc)) {
-    const cpThayThe = cpList
-      .filter(c => c.loai === 'TU_LUYEN' && Number(c.canhGioi) === cgMuc)
-      .sort((a, b) => (b.tuLuyen?.heSoTocDo || 1) - (a.tuLuyen?.heSoTocDo || 1))[0];
+    const cpPoolTu = cpList.filter(c => c.loai === 'TU_LUYEN' && Number(c.canhGioi) === cgMuc);
+    const cpThayThe = chonNgauNhienCoTrongSo(cpPoolTu, 1, c => heSoDaDang(c.id, c.he, 'cong_phap'))[0];
     if (cpThayThe) {
       if (cpChon.length >= 3) cpChon[cpChon.length - 1] = cpThayThe;
       else cpChon.push(cpThayThe);
     }
   }
 
+  const soDp = vung.coPhuongThi ? 2 + Math.floor(Math.random() * 2) : 1;
+  const dpChon = chonNgauNhienCoTrongSo(dpList, soDp, d => heSoDaDang(d.id, null, 'dan_phuong'));
+
+  shopNonce += 1;
+  const rollSeq = ((saved && saved.nam === nam ? Number(saved.rollSeq) || 0 : 0) + (forceReroll ? 1 : 0));
+  const randTag = Math.floor(Math.random() * 1e6).toString(36);
+  const key = `${vung.id}_y${nam}_cg${cgHienTai}_m${maxCg}_r${rollSeq}_${randTag}`;
+
+  state.shopVung[vung.id] = {
+    nam,
+    cg: cgHienTai,
+    maxCg,
+    rollSeq,
+    key,
+    itemSpecs: pickedItems.map(it => ({ id: it.id, shopKey: it.shopKey, pcKey: it.pcKey })),
+    congPhapIds: cpChon.map(c => c.id),
+    danPhuongIds: dpChon.map(d => d.id)
+  };
+  const vKeys = Object.keys(state.shopVung);
+  if (vKeys.length > 25) {
+    vKeys.slice(0, vKeys.length - 25).forEach(k => delete state.shopVung[k]);
+  }
+
   shopHangCache = {
     key,
     items: pickedItems,
     congPhap: cpChon,
-    danPhuong: chonNgauNhienNhieu(dpList, 3)
+    danPhuong: dpChon
   };
+  luuGame();
   return shopHangCache;
 }
 
 function lamMoiShopVung() {
-  if (state.linhThach < 10) {
-    ghiNhatKy('Cần 10 Linh thạch để dò hỏi thương nhân đổi phiên hàng mới!', 'canh_bao');
+  if (!state) return;
+  const info = layThongTinRollShop();
+  if (info.conLai <= 0 || info.giaTiepTheo === null) {
+    ghiNhatKy(`🔒 Năm ${state.nam} đã dùng hết ${MAX_ROLL_SHOP_NAM}/${MAX_ROLL_SHOP_NAM} lượt đổi phiên hàng! Sang năm ${state.nam + 1} thương hội sẽ mở lại lượt mới.`, 'canh_bao');
     veGiaoDien();
     return;
   }
-  state.linhThach -= 10;
-  shopNonce += 1;
-  ghiNhatKy(`🔄 Thương hội tại 【${layVungDef().ten}】 vừa mở sạp hàng mới (-10 LT)!`, 'thuong');
+  const gia = info.giaTiepTheo;
+  if (state.linhThach < gia) {
+    ghiNhatKy(`⚠️ Cần ${gia.toLocaleString()} Linh thạch để đổi phiên hàng lần ${info.daDung + 1}/${MAX_ROLL_SHOP_NAM} trong năm ${state.nam}!`, 'canh_bao');
+    veGiaoDien();
+    return;
+  }
+  const vung = layVungDef();
+  const maxCg = vung.coPhuongThi ? state.canhGioi + 1 : Math.min(2, state.canhGioi + 1);
+  const prevIds = new Set();
+  const prevRec = state.shopVung && state.shopVung[vung.id];
+  if (prevRec) {
+    for (const s of prevRec.itemSpecs || []) prevIds.add(s.id);
+    for (const c of prevRec.congPhapIds || []) prevIds.add(c);
+    for (const d of prevRec.danPhuongIds || []) prevIds.add(d);
+  }
+
+  state.linhThach -= gia;
+  state.shopRollNam.soLan = info.daDung + 1;
+  layKhoHangShop(vung, maxCg, true, prevIds);
+
+  const infoSau = layThongTinRollShop();
+  ghiNhatKy(
+    `🔄 Thương hội tại 【${vung.ten}】 đã bày sạp hàng ngẫu nhiên mới (-${gia.toLocaleString()} LT · Lượt ${infoSau.daDung}/${MAX_ROLL_SHOP_NAM} năm ${state.nam}${infoSau.conLai > 0 ? ` · Lần kế: ${infoSau.giaTiepTheo.toLocaleString()} LT` : ' · Đã hết lượt năm nay'})!`,
+    'tot'
+  );
   luuGame();
   veGiaoDien();
 }
@@ -7344,7 +7514,12 @@ function veCotPhai() {
               <option value="cong_phap" ${tp === 'cong_phap' ? 'selected' : ''}>Công pháp / Bí thuật</option>
               <option value="dan_phuong" ${tp === 'dan_phuong' ? 'selected' : ''}>Đan phương</option>
             </select>
-            <button class="btn btn-sm" onclick="lamMoiShopVung()">🔄 Đổi phiên hàng (10 LT)</button>
+            ${(() => {
+              const rInfo = layThongTinRollShop();
+              return rInfo.conLai > 0
+                ? `<button class="btn btn-sm" onclick="lamMoiShopVung()" title="Tối đa 3 lần đổi phiên hàng mỗi năm (10 → 100 → 1.000 LT)">🔄 Đổi phiên hàng (${rInfo.giaTiepTheo.toLocaleString()} LT · Còn ${rInfo.conLai}/${rInfo.toiDa})</button>`
+                : `<button class="btn btn-sm" disabled title="Đã hết 3 lượt đổi phiên trong Năm ${rInfo.nam}. Sẽ mở lại vào Năm ${rInfo.nam + 1}">🔒 Hết lượt đổi năm ${rInfo.nam} (0/${rInfo.toiDa})</button>`;
+            })()}
           </div>
           <div id="shop-list-container">${renderShopMuaListHtml(vung, maxCg, q, tp)}</div>`;
       }

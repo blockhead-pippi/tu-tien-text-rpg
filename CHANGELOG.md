@@ -423,7 +423,7 @@ Không thay đổi cấu trúc save cũ (save v2 vẫn đọc được).
 *(Tác giả: Gemini (Antigravity))*
 
 ### 1) Tính năng Tiên hiệp & Nguyên tác mới (`update_v1_9.js`)
-1. **🌟 NPC Hàn Lập & Biên Niên Nguyên Tác (Khán giả / Tham gia)**:
+1. **🌟 NPC Hàn Lập**:
    - Bổ sung NPC nguyên tác **Hàn Lập** (`npc_han_lap`, Tứ Linh Căn, xuất phát tại Kính Châu — Thất Huyền Môn) vào `data/npc/viet-quoc.js` và `data/game-data.xlsx`; tự động đồng bộ vào cả save cũ.
    - **8 Đại Biến Thế Giới** vận hành độc lập theo dòng năm tiểu thuyết *Phàm Nhân Tu Tiên*:
      - *Năm 4:* Loạn Dã Lang Bang tại Thất Huyền Môn
@@ -434,8 +434,8 @@ Không thay đổi cấu trúc save cũ (save v2 vẫn đọc được).
      - *Năm 95:* Đại chiến Mộ Lan Pháp Sĩ xâm lăng Thiên Nam
      - *Năm 135:* Côn Ngô Sơn khai phong tại Đại Tấn — Cổ Ma xuất thế
      - *Năm 180:* Không Gian Tiết Điểm Băng Đảo — Hàn Lập phi thăng Linh Giới
-   - Tại mỗi mốc, Hàn Lập tự động cập nhật cảnh giới, địa điểm, danh hiệu & biên niên; người chơi luôn có quyền chọn **👁️ Đứng ngoài quan sát (Làm khán giả)** an toàn hoặc **trực tiếp nhập cuộc**. Bổ sung bảng theo dõi tung tích Hàn Lập & mốc nguyên tác trong tab **🗺️ Bản Đồ**.
-2. **🐾 Hệ thống Linh Thú Đồng Hành** *(KHÔNG có Chưởng Thiên Bình cho người chơi — vật phẩm thuộc về Hàn Lập)*:
+   - Tại mỗi mốc, Hàn Lập tự động cập nhật cảnh giới, địa điểm, danh hiệu & biên niên. Bổ sung bảng theo dõi tung tích Hàn Lập & mốc nguyên tác trong tab **🗺️ Bản Đồ**.
+2. **🐾 Hệ thống Linh Thú Đồng Hành** **:
    - Mục **🐾 Linh Thú Đường** trong Động Phủ với 6 loài kinh điển: *Phệ Kim Trùng (Ấu Trùng)*, *Lục Dực Sương Ngô*, *Xích Hỏa Giao (Ấu Thú)*, *Lôi Bằng Ấu Điểu*, *Huyền Vũ Linh Quy*, *Thiết Giáp Linh Hầu*.
    - Hỗ trợ **Thu phục**, **Cho ăn Yêu Đan / Linh thạch**, **Huấn luyện** tăng độ Thân mật, **Tiến giai**, cộng chỉ số bị động vĩnh viễn và **tự động xuất kích trợ chiến** (Phá giáp / Hàn khí / Thiêu đốt / Hộ thuẫn / Xuất huyết) trong trận đấu.
 3. **✨ Phẩm chất Kim Đan (CG3) & Nguyên Anh (CG4)**:
@@ -458,3 +458,20 @@ Không thay đổi cấu trúc save cũ (save v2 vẫn đọc được).
 - **Bộ test tự động Node VM (`test_v19_all.js`)**: 10/10 nhóm test pass 100%.
 - **Kiểm thử trực tiếp trên trình duyệt** (save *Bạch Lăng Vân — Kết Đan Sơ Kỳ*): xác minh Topbar Bản Đồ, Linh Thú *Phệ Kim Trùng* trợ chiến, Sư Đồ thu nhận & truyền công, NPC *Hàn Lập* + sự kiện Nguyên tác, Túi Đồ, Cửa Hàng, Tàng Kinh & Bảo Khố Kết Đan, Tốc chiến Tiết kiệm LL — **0 lỗi Console / Page Error**.
 - **Đồng bộ Excel**: cập nhật `data/game-data.xlsx` (74 NPC, 43 Yêu thú, 121 Trang bị) và kiểm tra `python tools/import_excel.py --dry-run` pass sạch.
+
+---
+
+## v1.9.1 — "Cửa hàng riêng từng địa điểm · Roll ngẫu nhiên 3 lần/năm (10 → 100 → 1.000 LT)"
+
+*(Tác giả: Gemini (Antigravity))*
+
+### Sửa lỗi & Cải thiện
+1. **Cửa hàng riêng biệt cho từng địa điểm (`state.shopVung`)**:
+   - Trước đây `shopHangCache` chỉ lưu 1 bản tạm trong RAM và điểm chọn ưu tiên có khoảng cách điểm lớn hơn `Math.random() * 0.9` nên các địa điểm bày gần như cùng một danh sách item và tự reset khi đổi vùng / F5.
+   - Nay mỗi địa điểm tự roll và lưu danh sách hàng riêng theo năm & cảnh giới trong `state.shopVung[vung.id]` (có bản sắc đặc sản vùng nhẹ và giảm xác suất trùng lặp giữa các vùng lân cận). Đi từ vùng A sang vùng B rồi quay lại vùng A trong cùng năm sẽ giữ nguyên sạp hàng và tồn kho của từng nơi.
+2. **Roll ngẫu nhiên thật sự (`chonNgauNhienCoTrongSo`)**:
+   - Thay thuật toán sort theo `score + 0.9` bằng quay roulette có trọng số không lặp (`Math.random()` chuẩn); bỏ ép cứng lấy món rẻ nhất / nhanh nhất cố định; khi bấm đổi phiên hàng sẽ giảm mạnh trọng số các món vừa bày ở lượt trước để sạp mới đổi khác rõ rệt.
+3. **Giới hạn 3 lần đổi phiên/năm với giá tăng dần (`state.shopRollNam`)**:
+   - Mỗi năm có tối đa **3 lượt đổi phiên hàng** với chi phí lần lượt: **10 LT → 100 LT → 1.000 LT** (`SHOP_ROLL_COSTS = [10, 100, 1000]`).
+   - Nút đổi phiên hiển thị rõ giá kế tiếp và số lượt còn lại (`Còn 3/3` → `2/3` → `1/3`); hết lượt sẽ khóa đến hết năm và tự reset về 3 lượt (giá 10 LT) khi bước sang năm mới.
+
